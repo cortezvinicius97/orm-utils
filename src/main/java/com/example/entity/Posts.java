@@ -1,4 +1,4 @@
-package com.vcinsidedigital.entity;
+package com.example.entity;
 
 
 import com.vcinsidedigital.orm_utils.annotations.*;

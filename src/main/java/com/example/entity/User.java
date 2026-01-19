@@ -1,4 +1,4 @@
-package com.vcinsidedigital.entity;
+package com.example.entity;
 
 import com.vcinsidedigital.orm_utils.annotations.*;
 
@@ -9,7 +9,7 @@ public class User {
     @Id
     private Long id;
 
-    @Column(name = "username", length = 100, nullable = false, unique = true)
+    @Column(name = "username", length = 20, nullable = false, unique = true)
     private String username;
 
     @Column(name = "email", length = 255, nullable = false)
@@ -18,6 +18,9 @@ public class User {
     @Column(nullable = true)
     private Integer age;
 
+    @Column(name = "full_name", length = 60, nullable = false)
+    private String full_name;
+
     @OneToMany(targetEntity = Posts.class, mappedBy = "author",
             cascade = {CascadeType.ALL})
     private List<Posts> posts;
@@ -25,10 +28,11 @@ public class User {
     // Constructors
     public User() {}
 
-    public User(String username, String email, Integer age) {
+    public User(String username, String email, Integer age, String full_name) {
         this.username = username;
         this.email = email;
         this.age = age;
+        this.full_name = full_name;
     }
 
     // Getters and Setters
@@ -46,6 +50,14 @@ public class User {
 
     public List<Posts> getPosts() { return posts; }
     public void setPosts(List<Posts> posts) { this.posts = posts; }
+
+    public String getFull_name() {
+        return full_name;
+    }
+
+    public void setFull_name(String full_name) {
+        this.full_name = full_name;
+    }
 
     @Override
     public String toString() {

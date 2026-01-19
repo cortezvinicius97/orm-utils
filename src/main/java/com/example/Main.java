@@ -1,8 +1,8 @@
-package com.vcinsidedigital;
+package com.example;
 
-import com.vcinsidedigital.entity.Posts;
-import com.vcinsidedigital.entity.Tag;
-import com.vcinsidedigital.entity.User;
+import com.example.entity.Posts;
+import com.example.entity.Tag;
+import com.example.entity.User;
 import com.vcinsidedigital.orm_utils.ORM;
 import com.vcinsidedigital.orm_utils.config.DatabaseConfig;
 import com.vcinsidedigital.orm_utils.core.EntityManager;
@@ -32,20 +32,21 @@ public class Main {
                     .registerEntity(Tag.class)
                     .initialize();
 
+
             EntityManager em = orm.getEntityManager();
 
             // ==================== CRUD BÁSICO ====================
 
             // CREATE - Insert new users
-            User user1 = new User("john_doe", "john@example.com", 25);
+            User user1 = new User("john_doe", "john@example.com", 25, "John Doe");
             em.persist(user1);
             System.out.println("✓ Created: " + user1);
 
-            User user2 = new User("maria_silva", "maria@gmail.com", 30);
+            User user2 = new User("maria_silva", "maria@gmail.com", 30, "Maria Silva");
             em.persist(user2);
             System.out.println("✓ Created: " + user2);
 
-            User user3 = new User("joao_silva", "joao@gmail.com", 28);
+            User user3 = new User("joao_silva", "joao@gmail.com", 28, "João Silva");
             em.persist(user3);
             System.out.println("✓ Created: " + user3);
 
