@@ -31,18 +31,18 @@ public class ConnectionPool {
         this.config = config;
         this.maxPoolSize = 10;
         this.minIdle = 2;
-        this.connectionTimeout = 30000; // 30 segundos
-        this.idleTimeout = 600000; // 10 minutos
-        this.maxLifetime = 1800000; // 30 minutos
+        this.connectionTimeout = 30000; // 30 seconds
+        this.idleTimeout = 600000; // 10 minutes
+        this.maxLifetime = 1800000; // 30 minutes
 
         this.availableConnections = new ArrayBlockingQueue<>(maxPoolSize);
         this.activeConnections = new AtomicInteger(0);
 
         try {
-            // Carregar o driver JDBC
+            // Load JDBC driver
             Class.forName(config.getDriverClassName());
 
-            // Criar conexões mínimas
+            // Create minimum idle connections
             for (int i = 0; i < minIdle; i++) {
                 availableConnections.offer(createNewConnection());
             }
@@ -67,6 +67,293 @@ public class ConnectionPool {
         return instance;
     }
 
+    public static void createDatabase(DatabaseConfig config) throws SQLException {
+        String url;
+        String databaseName;
+        String sqlScript;
+
+        // Extract database name and build URL without the database
+        switch (config.getType()) {
+            case MYSQL:
+                url = config.getJdbcUrl();
+                int lastSlash = url.lastIndexOf('/');
+                databaseName = url.substring(lastSlash + 1);
+                sqlScript = "CREATE DATABASE IF NOT EXISTS " + config.getDatabase() +
+                        " CHARACTER SET "+config.getEncoding()+ " COLLATE " +config.getEncoding()+"_unicode_ci";
+                // URL format: jdbc:mysql://host:port/database
+
+
+                // Remove query parameters if they exist
+                int queryStart = databaseName.indexOf('?');
+                if (queryStart > 0) {
+                    databaseName = databaseName.substring(0, queryStart);
+                }
+                // URL without the database
+                url = url.substring(0, lastSlash);
+                break;
+
+            case POSTGRESQL:
+
+                // URL format: jdbc:postgresql://host:port/database
+                url = config.getJdbcUrl();
+                lastSlash = url.lastIndexOf('/');
+                databaseName = url.substring(lastSlash + 1);
+                queryStart = databaseName.indexOf('?');
+                if (queryStart > 0) {
+                    databaseName = databaseName.substring(0, queryStart);
+                }
+                // PostgreSQL needs to connect to an existing database (postgres)
+                url = url.substring(0, lastSlash) + "/postgres";
+
+                // PostgreSQL - check database existence before creating
+                sqlScript = "SELECT 1 FROM pg_database WHERE datname = '" + config.getDatabase() + "'";
+                break;
+
+            case SQLSERVER:
+                // URL format: jdbc:sqlserver://host:port;databaseName=database
+                url = config.getJdbcUrl();
+                int dbNameStart = url.indexOf("databaseName=");
+                if (dbNameStart > 0) {
+                    int dbNameEnd = url.indexOf(';', dbNameStart);
+                    if (dbNameEnd > 0) {
+                        databaseName = url.substring(dbNameStart + 13, dbNameEnd);
+                        // Remove the databaseName parameter from URL
+                        url = url.substring(0, dbNameStart) + url.substring(dbNameEnd + 1);
+                    } else {
+                        databaseName = url.substring(dbNameStart + 13);
+                        url = url.substring(0, dbNameStart - 1);
+                    }
+                } else {
+                    throw new SQLException("Database name not found in SQL Server URL");
+                }
+
+                sqlScript = "IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = '" +config.getDatabase()+"') "  +
+                        "BEGIN " +
+                        "CREATE DATABASE " +config.getDatabase()+" COLLATE " + config.getEncoding()+" "+
+                        "END";
+                break;
+
+            default:
+                throw new UnsupportedOperationException(
+                        "Database type not supported: " + config.getType()
+                );
+        }
+
+        logger.info("Creating database '{}' using {}", databaseName, config.getType());
+
+        Connection conn = null;
+        java.sql.Statement stmt = null;
+
+
+        try {
+            // Load driver
+            Class.forName(config.getDriverClassName());
+
+            // Connect without specifying the database
+            if (config.getUsername() != null && config.getPassword() != null) {
+                conn = DriverManager.getConnection(url, config.getUsername(), config.getPassword());
+            } else {
+                conn = DriverManager.getConnection(url);
+            }
+
+            stmt = conn.createStatement();
+
+            // For PostgreSQL, check if the database already exists before creating
+            if (config.getType() == DatabaseConfig.DatabaseType.POSTGRESQL) {
+                java.sql.ResultSet rs = stmt.executeQuery(sqlScript);
+
+                if (rs.next()) {
+                    logger.info("Database '{}' already exists, skipping creation", databaseName);
+                } else {
+                    String createScript = "CREATE DATABASE " + config.getDatabase() +
+                            " WITH ENCODING '" + config.getEncoding() + "'";
+                    logger.debug("Executing SQL: {}", createScript);
+                    stmt.execute(createScript);
+                    logger.info("Database '{}' created successfully", databaseName);
+                }
+                rs.close();
+            } else {
+                // For other databases, execute normally
+                String[] commands = sqlScript.split(";");
+                for (String command : commands) {
+                    command = command.trim();
+                    if (!command.isEmpty()) {
+                        logger.debug("Executing SQL: {}", command);
+                        stmt.execute(command);
+                    }
+                }
+                logger.info("Database '{}' created successfully", databaseName);
+            }
+
+        } catch (ClassNotFoundException e) {
+            throw new SQLException("JDBC Driver not found: " + config.getDriverClassName(), e);
+        } finally {
+            if (stmt != null) {
+                try {
+                    stmt.close();
+                } catch (SQLException e) {
+                    logger.error("Error closing statement", e);
+                }
+            }
+            if (conn != null) {
+                try {
+                    conn.close();
+                } catch (SQLException e) {
+                    logger.error("Error closing connection", e);
+                }
+            }
+        }
+    }
+
+    public static void dropDatabase(DatabaseConfig config) throws SQLException {
+        String url;
+        String databaseName;
+        String sqlScript;
+
+        // Extract database name and build URL without the database
+        switch (config.getType()) {
+            case MYSQL:
+                url = config.getJdbcUrl();
+                int lastSlash = url.lastIndexOf('/');
+                databaseName = url.substring(lastSlash + 1);
+
+                // Remove query parameters if they exist
+                int queryStart = databaseName.indexOf('?');
+                if (queryStart > 0) {
+                    databaseName = databaseName.substring(0, queryStart);
+                }
+
+                // URL without the database
+                url = url.substring(0, lastSlash);
+                sqlScript = "DROP DATABASE IF EXISTS " + config.getDatabase();
+                break;
+
+            case POSTGRESQL:
+                // URL format: jdbc:postgresql://host:port/database
+                url = config.getJdbcUrl();
+                lastSlash = url.lastIndexOf('/');
+                databaseName = url.substring(lastSlash + 1);
+                queryStart = databaseName.indexOf('?');
+                if (queryStart > 0) {
+                    databaseName = databaseName.substring(0, queryStart);
+                }
+
+                // PostgreSQL needs to connect to an existing database (postgres)
+                url = url.substring(0, lastSlash) + "/postgres";
+
+                // PostgreSQL requires terminating active connections before dropping
+                sqlScript = "SELECT pg_terminate_backend(pg_stat_activity.pid) " +
+                        "FROM pg_stat_activity " +
+                        "WHERE pg_stat_activity.datname = '" + config.getDatabase() + "' " +
+                        "AND pid <> pg_backend_pid();" +
+                        "DROP DATABASE IF EXISTS " + config.getDatabase();
+                break;
+
+            case SQLSERVER:
+                // URL format: jdbc:sqlserver://host:port;databaseName=database
+                url = config.getJdbcUrl();
+                int dbNameStart = url.indexOf("databaseName=");
+                if (dbNameStart > 0) {
+                    int dbNameEnd = url.indexOf(';', dbNameStart);
+                    if (dbNameEnd > 0) {
+                        databaseName = url.substring(dbNameStart + 13, dbNameEnd);
+                        // Remove the databaseName parameter from URL
+                        url = url.substring(0, dbNameStart) + url.substring(dbNameEnd + 1);
+                    } else {
+                        databaseName = url.substring(dbNameStart + 13);
+                        url = url.substring(0, dbNameStart - 1);
+                    }
+                } else {
+                    throw new SQLException("Database name not found in SQL Server URL");
+                }
+
+                // SQL Server - special marker to execute commands separately
+                sqlScript = "SQLSERVER_DROP";
+                break;
+
+            default:
+                throw new UnsupportedOperationException(
+                        "Database type not supported: " + config.getType()
+                );
+        }
+
+        logger.info("Dropping database '{}' using {}", databaseName, config.getType());
+
+        Connection conn = null;
+        java.sql.Statement stmt = null;
+
+        try {
+            // Load driver
+            Class.forName(config.getDriverClassName());
+
+            // Connect without specifying the database
+            if (config.getUsername() != null && config.getPassword() != null) {
+                conn = DriverManager.getConnection(url, config.getUsername(), config.getPassword());
+            } else {
+                conn = DriverManager.getConnection(url);
+            }
+
+            stmt = conn.createStatement();
+
+            // SQL Server requires executing commands separately
+            if (config.getType() == DatabaseConfig.DatabaseType.SQLSERVER) {
+                // Check if the database exists
+                java.sql.ResultSet rs = stmt.executeQuery(
+                        "SELECT name FROM sys.databases WHERE name = '" + config.getDatabase() + "'"
+                );
+
+                if (rs.next()) {
+                    rs.close();
+
+                    // Set database to SINGLE_USER mode
+                    String setSingleUser = "ALTER DATABASE [" + config.getDatabase() +
+                            "] SET SINGLE_USER WITH ROLLBACK IMMEDIATE";
+                    logger.debug("Executing SQL: {}", setSingleUser);
+                    stmt.execute(setSingleUser);
+
+                    // Drop the database
+                    String dropDb = "DROP DATABASE [" + config.getDatabase() + "]";
+                    logger.debug("Executing SQL: {}", dropDb);
+                    stmt.execute(dropDb);
+
+                    logger.info("Database '{}' dropped successfully", databaseName);
+                } else {
+                    rs.close();
+                    logger.info("Database '{}' does not exist, skipping drop", databaseName);
+                }
+            } else {
+                // For other databases, execute normally
+                String[] commands = sqlScript.split(";");
+                for (String command : commands) {
+                    command = command.trim();
+                    if (!command.isEmpty()) {
+                        logger.debug("Executing SQL: {}", command);
+                        stmt.execute(command);
+                    }
+                }
+                logger.info("Database '{}' dropped successfully", databaseName);
+            }
+
+        } catch (ClassNotFoundException e) {
+            throw new SQLException("JDBC Driver not found: " + config.getDriverClassName(), e);
+        } finally {
+            if (stmt != null) {
+                try {
+                    stmt.close();
+                } catch (SQLException e) {
+                    logger.error("Error closing statement", e);
+                }
+            }
+            if (conn != null) {
+                try {
+                    conn.close();
+                } catch (SQLException e) {
+                    logger.error("Error closing connection", e);
+                }
+            }
+        }
+    }
+
     public Connection getConnection() throws SQLException {
         if (isShutdown) {
             throw new SQLException("ConnectionPool is shutdown");
@@ -78,7 +365,7 @@ public class ConnectionPool {
             );
 
             if (pooledConn == null) {
-                // Tentar criar nova conexão se ainda não atingiu o limite
+                // Try to create a new connection if pool limit is not reached
                 if (activeConnections.get() < maxPoolSize) {
                     pooledConn = createNewConnection();
                 } else {
@@ -86,7 +373,7 @@ public class ConnectionPool {
                 }
             }
 
-            // Validar conexão
+            // Validate connection
             if (!isConnectionValid(pooledConn)) {
                 logger.warn("Invalid connection detected, creating new one");
                 closeConnection(pooledConn);
@@ -112,12 +399,12 @@ public class ConnectionPool {
         long age = now - connection.getCreatedAt();
         long idleTime = now - connection.getLastUsed();
 
-        // Fechar se excedeu tempo de vida ou está idle há muito tempo
+        // Close if connection exceeded max lifetime or idle timeout
         if (age > maxLifetime || idleTime > idleTimeout) {
             logger.debug("Closing aged/idle connection");
             closeConnection(connection);
 
-            // Manter pool mínimo
+            // Maintain minimum pool size
             if (activeConnections.get() < minIdle) {
                 try {
                     availableConnections.offer(createNewConnection());
@@ -126,7 +413,7 @@ public class ConnectionPool {
                 }
             }
         } else {
-            // Retornar à fila
+            // Return connection to pool queue
             if (!availableConnections.offer(connection)) {
                 logger.warn("Failed to return connection to pool, closing it");
                 closeConnection(connection);
@@ -185,7 +472,7 @@ public class ConnectionPool {
         isShutdown = true;
         logger.info("Closing ConnectionPool");
 
-        // Fechar todas as conexões disponíveis
+        // Close all available connections
         PooledConnection conn;
         while ((conn = availableConnections.poll()) != null) {
             closeConnection(conn);
@@ -195,7 +482,7 @@ public class ConnectionPool {
                 activeConnections.get());
     }
 
-    // Classe interna para armazenar metadados da conexão
+    // Internal class to store connection metadata
     protected static class PooledConnection {
         private final Connection connection;
         private final long createdAt;
@@ -224,7 +511,7 @@ public class ConnectionPool {
         }
     }
 
-    // Wrapper para interceptar o close() e retornar ao pool
+    // Wrapper to intercept close() and return connection to pool
     private static class ConnectionWrapper implements Connection {
         private final PooledConnection pooledConnection;
         private final ConnectionPool pool;
@@ -243,7 +530,7 @@ public class ConnectionPool {
             }
         }
 
-        // Delegar todos os outros métodos para a conexão real
+        // Delegate all other methods to the underlying connection
         @Override
         public java.sql.Statement createStatement() throws SQLException {
             checkClosed();

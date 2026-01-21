@@ -10,6 +10,7 @@ public class DatabaseConfig {
     private String filePath; // Para SQLite
     private String schema; // Para PostgreSQL/SQL Server
     private String instance; // Para SQL Server named instances
+    private Object encoding;
 
     private DatabaseConfig() {}
 
@@ -57,6 +58,7 @@ public class DatabaseConfig {
     public String getFilePath() { return filePath; }
     public String getSchema() { return schema; }
     public String getInstance() { return instance; }
+    public Object getEncoding() { return encoding; }
 
     public static class Builder {
         private final DatabaseConfig config = new DatabaseConfig();
@@ -66,6 +68,16 @@ public class DatabaseConfig {
             config.host = host;
             config.port = port;
             config.database = database;
+            config.encoding = "utf8mb4";
+            return this;
+        }
+
+        public Builder mysql(String host, int port, String database, String encodding) {
+            config.type = DatabaseType.MYSQL;
+            config.host = host;
+            config.port = port;
+            config.database = database;
+            config.encoding = encodding;
             return this;
         }
 
@@ -80,34 +92,46 @@ public class DatabaseConfig {
             config.host = host;
             config.port = port;
             config.database = database;
+            config.encoding = "UTF8";
             return this;
         }
 
-        /**
-         * Configura conexão com SQL Server
-         * @param host Hostname ou IP do servidor
-         * @param port Porta (padrão: 1433)
-         * @param database Nome do banco de dados
-         * @return Builder instance
-         */
+        public Builder postgresql(String host, int port, String database, String encodding) {
+            config.type = DatabaseType.POSTGRESQL;
+            config.host = host;
+            config.port = port;
+            config.database = database;
+            config.encoding = encodding;
+            return this;
+        }
+
+
+
+
         public Builder sqlserver(String host, int port, String database) {
             config.type = DatabaseType.SQLSERVER;
             config.host = host;
             config.port = port;
             config.database = database;
+            config.encoding = "Latin1_General_100_CI_AS_SC_UTF8";
             return this;
         }
 
-        /**
-         * Configura SQL Server com porta padrão (1433)
-         */
+        public Builder sqlserver(String host, int port, String database, String encodding) {
+            config.type = DatabaseType.SQLSERVER;
+            config.host = host;
+            config.port = port;
+            config.database = database;
+            config.encoding = encodding;
+            return this;
+        }
+
+
         public Builder sqlserver(String host, String database) {
             return sqlserver(host, 1433, database);
         }
 
-        /**
-         * Define uma named instance do SQL Server (ex: SQLEXPRESS)
-         */
+
         public Builder instance(String instance) {
             config.instance = instance;
             return this;

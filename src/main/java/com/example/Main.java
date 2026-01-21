@@ -20,10 +20,10 @@ public class Main {
                     .build();*/
 
             // Configure database MySQL
-            /*DatabaseConfig config = DatabaseConfig.builder()
-                 .mysql("localhost", 3306, "teste")
+            DatabaseConfig config = DatabaseConfig.builder()
+                 .mysql("localhost", 3306, "testedb")
                  .credentials("root", "123456")
-                 .build();*/
+                 .build();
 
             // Configure database postgres
             /*DatabaseConfig config = DatabaseConfig.builder()
@@ -32,9 +32,9 @@ public class Main {
                     .build();*/
 
             // Configure database sqlserver
-            DatabaseConfig config = DatabaseConfig.builder()
+            /*DatabaseConfig config = DatabaseConfig.builder()
                     .sqlserver("localhost", 1433, "teste").
-                    credentials("sa", "123456").build();
+                    credentials("sa", "123456").build();*/
 
 
             // Initialize ORM

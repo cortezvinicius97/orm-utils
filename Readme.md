@@ -8,12 +8,12 @@
 Gradle Groovy
 
 ```Groovy
-implementation 'com.vcinsidedigital:orm-utils:1.0.2'
+implementation 'com.vcinsidedigital:orm-utils:1.0.3'
 ```
 
 Gradle Kotlin
 ```kotlin
-implementation('com.vcinsidedigital:orm-utils:1.0.2')
+implementation('com.vcinsidedigital:orm-utils:1.0.3')
 ```
 
 Maven
@@ -22,7 +22,7 @@ Maven
     <dependency>
         <groupId>com.vcinsidedigital</groupId>
         <artifactId>orm-utils</artifactId>
-        <version>1.0.2</version>
+        <version>1.0.3</version>
     </dependency>
 </dependencies>
 ```
@@ -1177,6 +1177,307 @@ orm.initialize();
 // Adds 'cost' and 'markup' columns
 // Drops 'price' column automatically
 ```
+
+# 🗄️ Database Creation and Deletion
+
+The ORM provides utility methods to create and delete databases programmatically. This is useful for setup scripts, testing, and automated deployments.
+
+## Creating Databases
+
+Use `ORM.createDatabase()` to create a database before initializing the ORM.
+
+### MySQL
+
+```java
+DatabaseConfig config = DatabaseConfig.builder()
+        .mysql("localhost", 3306, "my_database")
+        .credentials("root", "password")
+        .build();
+
+ORM.createDatabase(config);
+System.out.println("MySQL database created successfully");
+```
+
+**Generated SQL:**
+```sql
+CREATE DATABASE IF NOT EXISTS my_database 
+CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+```
+
+### PostgreSQL
+
+```java
+DatabaseConfig config = DatabaseConfig.builder()
+        .postgresql("localhost", 5432, "my_database")
+        .credentials("postgres", "password")
+        .build();
+
+ORM.createDatabase(config);
+System.out.println("PostgreSQL database created successfully");
+```
+
+**Generated SQL:**
+```sql
+-- First checks if database exists
+SELECT 1 FROM pg_database WHERE datname = 'my_database'
+
+-- If not exists, creates it
+CREATE DATABASE my_database WITH ENCODING 'UTF8'
+```
+
+### SQL Server
+
+```java
+DatabaseConfig config = DatabaseConfig.builder()
+        .sqlserver("localhost", 1433, "my_database")
+        .credentials("sa", "YourPassword123")
+        .build();
+
+ORM.createDatabase(config);
+System.out.println("SQL Server database created successfully");
+```
+
+**Generated SQL:**
+```sql
+IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'my_database')
+BEGIN
+    CREATE DATABASE my_database COLLATE Latin1_General_CI_AS
+END
+```
+
+## Deleting Databases
+
+Use `ORM.dropDatabase()` to delete a database. **⚠️ Warning: This operation is irreversible!**
+
+### MySQL
+
+```java
+DatabaseConfig config = DatabaseConfig.builder()
+        .mysql("localhost", 3306, "my_database")
+        .credentials("root", "password")
+        .build();
+
+ORM.dropDatabase(config);
+System.out.println("MySQL database deleted successfully");
+```
+
+**Generated SQL:**
+```sql
+DROP DATABASE IF EXISTS my_database
+```
+
+### PostgreSQL
+
+```java
+DatabaseConfig config = DatabaseConfig.builder()
+        .postgresql("localhost", 5432, "my_database")
+        .credentials("postgres", "password")
+        .build();
+
+ORM.dropDatabase(config);
+System.out.println("PostgreSQL database deleted successfully");
+```
+
+**Generated SQL:**
+```sql
+-- First terminates active connections
+SELECT pg_terminate_backend(pg_stat_activity.pid)
+FROM pg_stat_activity
+WHERE pg_stat_activity.datname = 'my_database'
+AND pid <> pg_backend_pid();
+
+-- Then drops the database
+DROP DATABASE IF EXISTS my_database
+```
+
+### SQL Server
+
+```java
+DatabaseConfig config = DatabaseConfig.builder()
+        .sqlserver("localhost", 1433, "my_database")
+        .credentials("sa", "YourPassword123")
+        .build();
+
+ORM.dropDatabase(config);
+System.out.println("SQL Server database deleted successfully");
+```
+
+**Generated SQL:**
+```sql
+-- First checks if database exists
+SELECT name FROM sys.databases WHERE name = 'my_database'
+
+-- Sets database to single user mode and drops it
+ALTER DATABASE [my_database] SET SINGLE_USER WITH ROLLBACK IMMEDIATE
+DROP DATABASE [my_database]
+```
+
+## Complete Setup Example
+
+```java
+public class DatabaseSetup {
+    public static void main(String[] args) {
+        try {
+            // 1. Create database configuration
+            DatabaseConfig config = DatabaseConfig.builder()
+                    .postgresql("localhost", 5432, "my_app")
+                    .credentials("postgres", "password")
+                    .build();
+
+            // 2. Create the database
+            ORM.createDatabase(config);
+            System.out.println("✓ Database created successfully");
+
+            // 3. Initialize ORM and create tables
+            ORM orm = new ORM(config)
+                    .registerEntity(User.class)
+                    .registerEntity(Post.class)
+                    .initialize();
+            
+            System.out.println("✓ ORM initialized successfully");
+
+            // 4. Use the ORM
+            EntityManager em = orm.getEntityManager();
+            // ... your application logic
+
+            // 5. Cleanup (optional)
+            orm.shutdown();
+            
+        } catch (Exception e) {
+            System.err.println("Error: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+}
+```
+
+## Testing and Cleanup Example
+
+```java
+public class DatabaseTest {
+    private static DatabaseConfig config;
+    
+    @BeforeAll
+    public static void setup() throws Exception {
+        config = DatabaseConfig.builder()
+                .postgresql("localhost", 5432, "test_db")
+                .credentials("postgres", "password")
+                .build();
+        
+        // Create fresh database for tests
+        ORM.createDatabase(config);
+    }
+    
+    @AfterAll
+    public static void cleanup() throws Exception {
+        // Clean up after tests
+        ORM.dropDatabase(config);
+    }
+    
+    @Test
+    public void testUserCreation() throws Exception {
+        ORM orm = new ORM(config)
+                .registerEntity(User.class)
+                .initialize();
+        
+        EntityManager em = orm.getEntityManager();
+        
+        User user = new User();
+        user.setName("Test User");
+        em.persist(user);
+        
+        assertNotNull(user.getId());
+        
+        orm.shutdown();
+    }
+}
+```
+
+## Important Notes
+
+### SQLite Not Supported
+SQLite databases are created automatically when you first connect:
+
+```java
+// SQLite - no need for createDatabase()
+DatabaseConfig config = DatabaseConfig.builder()
+        .sqlite("myapp.db")
+        .build();
+
+ORM orm = new ORM(config)
+        .registerEntity(User.class)
+        .initialize();  // Database file created automatically
+```
+
+### Permissions Required
+
+Make sure your database user has the necessary permissions:
+
+**MySQL:**
+```sql
+GRANT CREATE, DROP ON *.* TO 'username'@'localhost';
+```
+
+**PostgreSQL:**
+```sql
+ALTER USER username CREATEDB;
+```
+
+**SQL Server:**
+```sql
+-- User must have CREATE DATABASE permission
+GRANT CREATE ANY DATABASE TO username;
+```
+
+### Error Handling
+
+Always handle exceptions when creating or dropping databases:
+
+```java
+try {
+    ORM.createDatabase(config);
+} catch (SQLException e) {
+    System.err.println("Failed to create database: " + e.getMessage());
+    // Handle error (e.g., database already exists, permission denied)
+} catch (UnsupportedOperationException e) {
+    System.err.println("Database type not supported: " + e.getMessage());
+}
+```
+
+### Safety Best Practices
+
+1. **Never drop production databases** programmatically
+2. **Always backup** before dropping databases
+3. **Use different databases** for development, testing, and production
+4. **Verify configuration** before executing create/drop operations
+5. **Log operations** for audit trails
+
+```java
+// Good practice: Confirm before dropping
+public static void dropDatabaseSafely(DatabaseConfig config) throws Exception {
+    Scanner scanner = new Scanner(System.in);
+    System.out.println("⚠️  WARNING: About to drop database: " + config.getDatabase());
+    System.out.print("Type 'YES' to confirm: ");
+    
+    String confirmation = scanner.nextLine();
+    if ("YES".equals(confirmation)) {
+        ORM.dropDatabase(config);
+        System.out.println("✓ Database dropped");
+    } else {
+        System.out.println("✗ Operation cancelled");
+    }
+}
+```
+
+## Database Creation Features Summary
+
+| Feature | MySQL | PostgreSQL | SQL Server | SQLite |
+|---------|-------|------------|------------|--------|
+| Create database | ✅ Yes | ✅ Yes | ✅ Yes | ⚠️ Automatic |
+| Drop database | ✅ Yes | ✅ Yes | ✅ Yes | ❌ Manual file deletion |
+| Character set | ✅ UTF8MB4 | ✅ UTF8 | ✅ Latin1_General_CI_AS | N/A |
+| Terminate connections | ❌ No | ✅ Yes | ✅ Yes (single user mode) | N/A |
+| Check existence | ✅ Yes | ✅ Yes | ✅ Yes | N/A |
 
 ## ⚠️ Limitations
 
