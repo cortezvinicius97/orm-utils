@@ -1178,6 +1178,16 @@ orm.initialize();
 // Drops 'price' column automatically
 ```
 
+## ⚠️ Limitations
+
+- **FetchType.LAZY**: Not fully implemented (always loads EAGER)
+- **Cascade Operations**: Not automatically executed
+- **Query Builder**: Limited to provided query methods
+- **Transactions**: Must be managed manually
+- **OneToMany/ManyToMany Collections**: Not automatically loaded
+- **JOIN Queries**: Not supported (use separate queries)
+- **Column Renaming**: Not detected automatically (use migrations)
+
 # 🗄️ Database Creation and Deletion
 
 The ORM provides utility methods to create and delete databases programmatically. This is useful for setup scripts, testing, and automated deployments.
@@ -1478,16 +1488,6 @@ public static void dropDatabaseSafely(DatabaseConfig config) throws Exception {
 | Character set | ✅ UTF8MB4 | ✅ UTF8 | ✅ Latin1_General_CI_AS | N/A |
 | Terminate connections | ❌ No | ✅ Yes | ✅ Yes (single user mode) | N/A |
 | Check existence | ✅ Yes | ✅ Yes | ✅ Yes | N/A |
-
-## ⚠️ Limitations
-
-- **FetchType.LAZY**: Not fully implemented (always loads EAGER)
-- **Cascade Operations**: Not automatically executed
-- **Query Builder**: Limited to provided query methods
-- **Transactions**: Must be managed manually
-- **OneToMany/ManyToMany Collections**: Not automatically loaded
-- **JOIN Queries**: Not supported (use separate queries)
-- **Column Renaming**: Not detected automatically (use migrations)
 
 ## 🆕 What's New in Recent Updates
 
