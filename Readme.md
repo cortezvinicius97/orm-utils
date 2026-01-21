@@ -176,12 +176,10 @@ import com.vcinsidedigital.orm_utils.config.DatabaseConfig;
 public class Main {
     public static void main(String[] args) throws Exception {
         // PostgreSQL
-        DatabaseConfig config = new DatabaseConfig(
-            "jdbc:postgresql://localhost:5432/my_database",
-            "postgres",
-            "password",
-            DatabaseConfig.DatabaseType.POSTGRESQL
-        );
+        DatabaseConfig config = DatabaseConfig.builder()
+                .postgresql("localhost", 5432, "my_database")
+                .credentials("postgres", "password")
+                .build();
 
         // Initialize ORM
         ORM orm = new ORM(config)
@@ -198,42 +196,33 @@ public class Main {
 
 ```java
 // SQL Server
-DatabaseConfig config = new DatabaseConfig(
-    "jdbc:sqlserver://localhost:1433;databaseName=my_database;encrypt=true;trustServerCertificate=true",
-    "sa",
-    "YourPassword123",
-    DatabaseConfig.DatabaseType.SQLSERVER
-);
+DatabaseConfig config = DatabaseConfig.builder()
+        .sqlserver("localhost", 1433, "my_database")
+        .credentials("sa", "YourPassword123")
+        .build();
 
 ORM orm = new ORM(config)
         .registerEntity(User.class)
         .initialize();
 ```
 
-#### Connection String Examples
+#### MySQL Configuration (Legacy Support)
 
-**PostgreSQL:**
 ```java
-// Local
-"jdbc:postgresql://localhost:5432/database_name"
-
-// Remote with SSL
-"jdbc:postgresql://host:5432/database?ssl=true&sslmode=require"
-
-// With schema
-"jdbc:postgresql://localhost:5432/database?currentSchema=myschema"
+// MySQL
+DatabaseConfig config = DatabaseConfig.builder()
+        .mysql("localhost", 3306, "my_database")
+        .credentials("root", "password")
+        .build();
 ```
 
-**SQL Server:**
+#### SQLite Configuration (Legacy Support)
+
 ```java
-// Local (Windows Authentication)
-"jdbc:sqlserver://localhost:1433;databaseName=mydb;integratedSecurity=true"
-
-// SQL Authentication
-"jdbc:sqlserver://localhost:1433;databaseName=mydb;encrypt=true;trustServerCertificate=true"
-
-// Azure SQL Database
-"jdbc:sqlserver://myserver.database.windows.net:1433;database=mydb;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net"
+// SQLite
+DatabaseConfig config = DatabaseConfig.builder()
+        .sqlite("myapp.db")
+        .build();
 ```
 
 ### 3. Perform Operations
@@ -265,36 +254,54 @@ orm.shutdown();
 ### PostgreSQL
 
 ```java
-DatabaseConfig config = new DatabaseConfig(
-    "jdbc:postgresql://localhost:5432/database_name",
-    "username",
-    "password",
-    DatabaseConfig.DatabaseType.POSTGRESQL
-);
+DatabaseConfig config = DatabaseConfig.builder()
+        .postgresql("localhost", 5432, "database_name")
+        .credentials("username", "password")
+        .build();
 ```
 
-**Common PostgreSQL Options:**
-- `?ssl=true` - Enable SSL connection
-- `?sslmode=require` - Require SSL
-- `?currentSchema=schema_name` - Set default schema
-- `?ApplicationName=MyApp` - Set application name for monitoring
+**Common PostgreSQL Configuration Options:**
+
+The builder automatically handles connection string construction. For advanced options, you can customize the connection after building:
+
+- SSL connections
+- Schema selection
+- Connection timeouts
+- Application naming
 
 ### SQL Server
 
 ```java
-DatabaseConfig config = new DatabaseConfig(
-    "jdbc:sqlserver://localhost:1433;databaseName=database_name;encrypt=true;trustServerCertificate=true",
-    "username",
-    "password",
-    DatabaseConfig.DatabaseType.SQLSERVER
-);
+DatabaseConfig config = DatabaseConfig.builder()
+        .sqlserver("localhost", 1433, "database_name")
+        .credentials("username", "password")
+        .build();
 ```
 
-**Common SQL Server Options:**
-- `;encrypt=true` - Enable encryption
-- `;trustServerCertificate=true` - Trust server certificate (dev only)
-- `;integratedSecurity=true` - Use Windows authentication
-- `;loginTimeout=30` - Connection timeout in seconds
+**Common SQL Server Configuration Options:**
+
+The builder automatically handles connection string construction with:
+- Encryption enabled
+- Trusted server certificate (for development)
+
+For production environments with proper certificates, customize as needed.
+
+### MySQL (Legacy Support)
+
+```java
+DatabaseConfig config = DatabaseConfig.builder()
+        .mysql("localhost", 3306, "database_name")
+        .credentials("username", "password")
+        .build();
+```
+
+### SQLite (Legacy Support)
+
+```java
+DatabaseConfig config = DatabaseConfig.builder()
+        .sqlite("path/to/database.db")
+        .build();
+```
 
 ## 📌 Annotations
 
@@ -1043,12 +1050,10 @@ public class Post {
 // Usage
 public class BlogApp {
     public static void main(String[] args) throws Exception {
-        DatabaseConfig config = new DatabaseConfig(
-            "jdbc:postgresql://localhost:5432/blog_db",
-            "postgres",
-            "password",
-            DatabaseConfig.DatabaseType.POSTGRESQL
-        );
+        DatabaseConfig config = DatabaseConfig.builder()
+                .postgresql("localhost", 5432, "blog_db")
+                .credentials("postgres", "password")
+                .build();
 
         // Tables are created in correct order automatically
         ORM orm = new ORM(config)
@@ -1089,18 +1094,16 @@ public class BlogApp {
 ```java
 public class EnterpriseApp {
     public static void main(String[] args) throws Exception {
-        DatabaseConfig config = new DatabaseConfig(
-            "jdbc:sqlserver://sqlserver.company.com:1433;databaseName=production;encrypt=true",
-            "app_user",
-            "SecurePassword123!",
-            DatabaseConfig.DatabaseType.SQLSERVER
-        );
+        DatabaseConfig config = DatabaseConfig.builder()
+                .sqlserver("sqlserver.company.com", 1433, "production")
+                .credentials("app_user", "SecurePassword123!")
+                .build();
 
         ORM orm = new ORM(config)
-            .registerEntity(User.class)
-            .registerEntity(Order.class)
-            .registerEntity(Product.class)
-            .initialize();
+                .registerEntity(User.class)
+                .registerEntity(Order.class)
+                .registerEntity(Product.class)
+                .initialize();
 
         EntityManager em = orm.getEntityManager();
 
@@ -1121,10 +1124,10 @@ public class EnterpriseApp {
 public class Product {
     @Id(autoIncrement = true)
     private Long id;
-    
+
     @Column(nullable = false)
     private String name;
-    
+
     @Column(type = ColumnType.DECIMAL)
     private Double price;
 }
@@ -1136,13 +1139,13 @@ orm.initialize(); // Creates table
 public class Product {
     @Id(autoIncrement = true)
     private Long id;
-    
+
     @Column(nullable = false)
     private String name;
-    
+
     @Column(type = ColumnType.DECIMAL)
     private Double price;
-    
+
     @Column(type = ColumnType.INT)  // NEW
     private Integer stock;          // NEW
 }
@@ -1154,23 +1157,23 @@ orm.initialize(); // Adds 'stock' column automatically
 public class Product {
     @Id(autoIncrement = true)
     private Long id;
-    
+
     @Column(nullable = false)
     private String name;
-    
+
     // price removed - will be dropped
-    
+
     @Column(type = ColumnType.DECIMAL)  // NEW
     private Double cost;                // NEW
-    
+
     @Column(type = ColumnType.DECIMAL)  // NEW
     private Double markup;              // NEW
-    
+
     @Column(type = ColumnType.INT)
     private Integer stock;
 }
 
-orm.initialize(); 
+orm.initialize();
 // Adds 'cost' and 'markup' columns
 // Drops 'price' column automatically
 ```
