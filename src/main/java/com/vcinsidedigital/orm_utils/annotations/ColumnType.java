@@ -3,124 +3,216 @@ package com.vcinsidedigital.orm_utils.annotations;
 import com.vcinsidedigital.orm_utils.config.DatabaseConfig;
 
 public enum ColumnType {
-    // Tipos automáticos (inferidos do tipo Java)
     AUTO,
+    VARCHAR, TEXT, LONGTEXT, MEDIUMTEXT, TINYTEXT,
+    TINYINT, SMALLINT, INT, BIGINT,
+    FLOAT, DOUBLE, DECIMAL,
+    BOOLEAN,
+    DATE, DATETIME, DATETIME2, TIMESTAMP, TIME, YEAR,
+    BLOB, LONGBLOB, MEDIUMBLOB, TINYBLOB,
+    JSON, ENUM;
 
-    // Tipos de texto
-    VARCHAR,        // VARCHAR(n) - MySQL/SQLite
-    TEXT,          // TEXT - ambos
-    LONGTEXT,      // LONGTEXT (MySQL) / TEXT (SQLite)
-    MEDIUMTEXT,    // MEDIUMTEXT (MySQL) / TEXT (SQLite)
-    TINYTEXT,      // TINYTEXT (MySQL) / TEXT (SQLite)
-
-    // Tipos numéricos inteiros
-    TINYINT,       // TINYINT (MySQL) / INTEGER (SQLite)
-    SMALLINT,      // SMALLINT - ambos
-    INT,           // INT (MySQL) / INTEGER (SQLite)
-    BIGINT,        // BIGINT (MySQL) / INTEGER (SQLite)
-
-    // Tipos numéricos decimais
-    FLOAT,         // FLOAT (MySQL) / REAL (SQLite)
-    DOUBLE,        // DOUBLE (MySQL) / REAL (SQLite)
-    DECIMAL,       // DECIMAL(p,s) (MySQL) / REAL (SQLite)
-
-    // Tipos booleanos
-    BOOLEAN,       // TINYINT(1) (MySQL) / INTEGER (SQLite)
-
-    // Tipos de data/hora
-    DATE,          // DATE (MySQL) / TEXT (SQLite)
-    DATETIME,      // DATETIME (MySQL) / TEXT (SQLite)
-    TIMESTAMP,     // TIMESTAMP (MySQL) / TEXT (SQLite)
-    TIME,          // TIME (MySQL) / TEXT (SQLite)
-    YEAR,          // YEAR (MySQL) / INTEGER (SQLite)
-
-    // Tipos binários
-    BLOB,          // BLOB - ambos
-    LONGBLOB,      // LONGBLOB (MySQL) / BLOB (SQLite)
-    MEDIUMBLOB,    // MEDIUMBLOB (MySQL) / BLOB (SQLite)
-    TINYBLOB,      // TINYBLOB (MySQL) / BLOB (SQLite)
-
-    // Tipos especiais
-    JSON,          // JSON (MySQL) / TEXT (SQLite)
-    ENUM;          // ENUM (MySQL) / TEXT (SQLite)
-
-    /**
-     * Retorna o tipo SQL correspondente para o banco de dados especificado
-     */
     public String getSqlType(DatabaseConfig.DatabaseType dbType, int length, int precision, int scale) {
         switch (this) {
             case AUTO:
-                return null; // Será inferido do tipo Java
+                return null;
 
             // Tipos de texto
             case VARCHAR:
-                return "VARCHAR(" + length + ")";
+                return switch (dbType) {
+                    case MYSQL, POSTGRESQL -> "VARCHAR(" + length + ")";
+                    case SQLSERVER -> length > 4000 ? "NVARCHAR(MAX)" : "NVARCHAR(" + length + ")";
+                    case SQLITE -> "TEXT";
+                };
+
             case TEXT:
-                return "TEXT";
+                return switch (dbType) {
+                    case MYSQL, POSTGRESQL -> "TEXT";
+                    case SQLSERVER -> "NVARCHAR(MAX)";
+                    case SQLITE -> "TEXT";
+                };
+
             case LONGTEXT:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "LONGTEXT" : "TEXT";
+                return switch (dbType) {
+                    case MYSQL -> "LONGTEXT";
+                    case POSTGRESQL -> "TEXT";
+                    case SQLSERVER -> "NVARCHAR(MAX)";
+                    case SQLITE -> "TEXT";
+                };
+
             case MEDIUMTEXT:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "MEDIUMTEXT" : "TEXT";
+                return switch (dbType) {
+                    case MYSQL -> "MEDIUMTEXT";
+                    case POSTGRESQL -> "TEXT";
+                    case SQLSERVER -> "NVARCHAR(MAX)";
+                    case SQLITE -> "TEXT";
+                };
+
             case TINYTEXT:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "TINYTEXT" : "TEXT";
+                return switch (dbType) {
+                    case MYSQL -> "TINYTEXT";
+                    case POSTGRESQL -> "VARCHAR(255)";
+                    case SQLSERVER -> "NVARCHAR(255)";
+                    case SQLITE -> "TEXT";
+                };
 
             // Tipos numéricos inteiros
             case TINYINT:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "TINYINT" : "INTEGER";
+                return switch (dbType) {
+                    case MYSQL -> "TINYINT";
+                    case POSTGRESQL -> "SMALLINT";
+                    case SQLSERVER -> "TINYINT";
+                    case SQLITE -> "INTEGER";
+                };
+
             case SMALLINT:
                 return "SMALLINT";
+
             case INT:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "INT" : "INTEGER";
+                return switch (dbType) {
+                    case MYSQL, POSTGRESQL, SQLSERVER -> "INT";
+                    case SQLITE -> "INTEGER";
+                };
+
             case BIGINT:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "BIGINT" : "INTEGER";
+                return switch (dbType) {
+                    case MYSQL, POSTGRESQL, SQLSERVER -> "BIGINT";
+                    case SQLITE -> "INTEGER";
+                };
 
             // Tipos numéricos decimais
             case FLOAT:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "FLOAT" : "REAL";
+                return switch (dbType) {
+                    case MYSQL, POSTGRESQL -> "FLOAT";
+                    case SQLSERVER -> "REAL";
+                    case SQLITE -> "REAL";
+                };
+
             case DOUBLE:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "DOUBLE" : "REAL";
+                return switch (dbType) {
+                    case MYSQL -> "DOUBLE";
+                    case POSTGRESQL -> "DOUBLE PRECISION";
+                    case SQLSERVER -> "FLOAT";
+                    case SQLITE -> "REAL";
+                };
+
             case DECIMAL:
                 if (precision > 0 && scale > 0) {
-                    return dbType == DatabaseConfig.DatabaseType.MYSQL
-                            ? "DECIMAL(" + precision + "," + scale + ")"
-                            : "REAL";
+                    return switch (dbType) {
+                        case MYSQL, POSTGRESQL, SQLSERVER ->
+                                "DECIMAL(" + precision + "," + scale + ")";
+                        case SQLITE -> "REAL";
+                    };
                 }
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "DECIMAL(10,2)" : "REAL";
+                return switch (dbType) {
+                    case MYSQL, POSTGRESQL, SQLSERVER -> "DECIMAL(10,2)";
+                    case SQLITE -> "REAL";
+                };
 
             // Tipos booleanos
             case BOOLEAN:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "TINYINT(1)" : "INTEGER";
+                return switch (dbType) {
+                    case MYSQL -> "TINYINT(1)";
+                    case POSTGRESQL -> "BOOLEAN";
+                    case SQLSERVER -> "BIT";
+                    case SQLITE -> "INTEGER";
+                };
 
             // Tipos de data/hora
             case DATE:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "DATE" : "TEXT";
+                return switch (dbType) {
+                    case MYSQL, POSTGRESQL, SQLSERVER -> "DATE";
+                    case SQLITE -> "TEXT";
+                };
+
             case DATETIME:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "DATETIME" : "TEXT";
+                return switch (dbType) {
+                    case MYSQL -> "DATETIME";
+                    case POSTGRESQL -> "TIMESTAMP";
+                    case SQLSERVER -> "DATETIME";
+                    case SQLITE -> "TEXT";
+                };
+
+            case DATETIME2:
+                return switch (dbType) {
+                    case MYSQL -> "DATETIME";
+                    case POSTGRESQL -> "TIMESTAMP";
+                    case SQLSERVER -> "DATETIME2";
+                    case SQLITE -> "TEXT";
+                };
+
             case TIMESTAMP:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "DATETIME" : "TEXT";
+                return switch (dbType) {
+                    case MYSQL -> "DATETIME";
+                    case POSTGRESQL -> "TIMESTAMP";
+                    case SQLSERVER -> "DATETIME2";
+                    case SQLITE -> "TEXT";
+                };
+
             case TIME:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "TIME" : "TEXT";
+                return switch (dbType) {
+                    case MYSQL, POSTGRESQL, SQLSERVER -> "TIME";
+                    case SQLITE -> "TEXT";
+                };
+
             case YEAR:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "YEAR" : "INTEGER";
+                return switch (dbType) {
+                    case MYSQL -> "YEAR";
+                    case POSTGRESQL, SQLSERVER -> "INT";
+                    case SQLITE -> "INTEGER";
+                };
 
             // Tipos binários
             case BLOB:
-                return "BLOB";
+                return switch (dbType) {
+                    case MYSQL, SQLITE -> "BLOB";
+                    case POSTGRESQL -> "BYTEA";
+                    case SQLSERVER -> "VARBINARY(MAX)";
+                };
+
             case LONGBLOB:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "LONGBLOB" : "BLOB";
+                return switch (dbType) {
+                    case MYSQL -> "LONGBLOB";
+                    case POSTGRESQL -> "BYTEA";
+                    case SQLSERVER -> "VARBINARY(MAX)";
+                    case SQLITE -> "BLOB";
+                };
+
             case MEDIUMBLOB:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "MEDIUMBLOB" : "BLOB";
+                return switch (dbType) {
+                    case MYSQL -> "MEDIUMBLOB";
+                    case POSTGRESQL -> "BYTEA";
+                    case SQLSERVER -> "VARBINARY(MAX)";
+                    case SQLITE -> "BLOB";
+                };
+
             case TINYBLOB:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "TINYBLOB" : "BLOB";
+                return switch (dbType) {
+                    case MYSQL -> "TINYBLOB";
+                    case POSTGRESQL -> "BYTEA";
+                    case SQLSERVER -> "VARBINARY(255)";
+                    case SQLITE -> "BLOB";
+                };
 
             // Tipos especiais
             case JSON:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "JSON" : "TEXT";
+                return switch (dbType) {
+                    case MYSQL, POSTGRESQL -> "JSON";
+                    case SQLSERVER -> "NVARCHAR(MAX)";
+                    case SQLITE -> "TEXT";
+                };
+
             case ENUM:
-                return dbType == DatabaseConfig.DatabaseType.MYSQL ? "ENUM" : "TEXT";
+                return switch (dbType) {
+                    case MYSQL -> "ENUM";
+                    case POSTGRESQL, SQLSERVER, SQLITE -> "TEXT";
+                };
 
             default:
-                return "TEXT";
+                return switch (dbType) {
+                    case SQLSERVER -> "NVARCHAR(255)";
+                    default -> "TEXT";
+                };
         }
     }
 }

@@ -8,6 +8,8 @@ public class DatabaseConfig {
     private String username;
     private String password;
     private String filePath; // Para SQLite
+    private String schema; // Para PostgreSQL/SQL Server
+    private String instance; // Para SQL Server named instances
 
     private DatabaseConfig() {}
 
@@ -17,8 +19,22 @@ public class DatabaseConfig {
 
     public String getJdbcUrl() {
         return switch (type) {
-            case MYSQL -> String.format("jdbc:mysql://%s:%d/%s", host, port, database);
+            case MYSQL -> String.format("jdbc:mysql://%s:%d/%s?useSSL=false&serverTimezone=UTC",
+                    host, port, database);
             case SQLITE -> String.format("jdbc:sqlite:%s", filePath);
+            case POSTGRESQL -> String.format("jdbc:postgresql://%s:%d/%s",
+                    host, port, database);
+            case SQLSERVER -> {
+                StringBuilder url = new StringBuilder("jdbc:sqlserver://");
+                url.append(host);
+                if (instance != null && !instance.isEmpty()) {
+                    url.append("\\").append(instance);
+                }
+                url.append(":").append(port);
+                url.append(";databaseName=").append(database);
+                url.append(";encrypt=false;trustServerCertificate=true");
+                yield url.toString();
+            }
         };
     }
 
@@ -26,6 +42,8 @@ public class DatabaseConfig {
         return switch (type) {
             case MYSQL -> "com.mysql.cj.jdbc.Driver";
             case SQLITE -> "org.sqlite.JDBC";
+            case POSTGRESQL -> "org.postgresql.Driver";
+            case SQLSERVER -> "com.microsoft.sqlserver.jdbc.SQLServerDriver";
         };
     }
 
@@ -37,6 +55,8 @@ public class DatabaseConfig {
     public String getUsername() { return username; }
     public String getPassword() { return password; }
     public String getFilePath() { return filePath; }
+    public String getSchema() { return schema; }
+    public String getInstance() { return instance; }
 
     public static class Builder {
         private final DatabaseConfig config = new DatabaseConfig();
@@ -55,9 +75,52 @@ public class DatabaseConfig {
             return this;
         }
 
+        public Builder postgresql(String host, int port, String database) {
+            config.type = DatabaseType.POSTGRESQL;
+            config.host = host;
+            config.port = port;
+            config.database = database;
+            return this;
+        }
+
+        /**
+         * Configura conexão com SQL Server
+         * @param host Hostname ou IP do servidor
+         * @param port Porta (padrão: 1433)
+         * @param database Nome do banco de dados
+         * @return Builder instance
+         */
+        public Builder sqlserver(String host, int port, String database) {
+            config.type = DatabaseType.SQLSERVER;
+            config.host = host;
+            config.port = port;
+            config.database = database;
+            return this;
+        }
+
+        /**
+         * Configura SQL Server com porta padrão (1433)
+         */
+        public Builder sqlserver(String host, String database) {
+            return sqlserver(host, 1433, database);
+        }
+
+        /**
+         * Define uma named instance do SQL Server (ex: SQLEXPRESS)
+         */
+        public Builder instance(String instance) {
+            config.instance = instance;
+            return this;
+        }
+
         public Builder credentials(String username, String password) {
             config.username = username;
             config.password = password;
+            return this;
+        }
+
+        public Builder schema(String schema) {
+            config.schema = schema;
             return this;
         }
 
@@ -70,6 +133,9 @@ public class DatabaseConfig {
     }
 
     public enum DatabaseType {
-        MYSQL, SQLITE
+        MYSQL,
+        SQLITE,
+        POSTGRESQL,
+        SQLSERVER
     }
 }

@@ -178,23 +178,35 @@ public class SchemaGenerator {
 
     private boolean tableExists(Connection conn, String tableName,
                                 DatabaseConfig.DatabaseType dbType) throws SQLException {
-        if (dbType == DatabaseConfig.DatabaseType.MYSQL) {
-            String sql = "SELECT COUNT(*) FROM information_schema.tables " +
-                    "WHERE table_schema = DATABASE() AND table_name = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setString(1, tableName);
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    return rs.next() && rs.getInt(1) > 0;
+        switch (dbType) {
+            case MYSQL:
+                String mysqlSql = "SELECT COUNT(*) FROM information_schema.tables " +
+                        "WHERE table_schema = DATABASE() AND table_name = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(mysqlSql)) {
+                    pstmt.setString(1, tableName);
+                    try (ResultSet rs = pstmt.executeQuery()) {
+                        return rs.next() && rs.getInt(1) > 0;
+                    }
                 }
-            }
-        } else {
-            String sql = "SELECT name FROM sqlite_master WHERE type='table' AND name=?";
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setString(1, tableName);
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    return rs.next();
+
+            case POSTGRESQL:
+                String pgSql = "SELECT COUNT(*) FROM information_schema.tables " +
+                        "WHERE table_schema = 'public' AND table_name = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(pgSql)) {
+                    pstmt.setString(1, tableName);
+                    try (ResultSet rs = pstmt.executeQuery()) {
+                        return rs.next() && rs.getInt(1) > 0;
+                    }
                 }
-            }
+            case SQLITE:
+            default:
+                String sqliteSql = "SELECT name FROM sqlite_master WHERE type='table' AND name=?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqliteSql)) {
+                    pstmt.setString(1, tableName);
+                    try (ResultSet rs = pstmt.executeQuery()) {
+                        return rs.next();
+                    }
+                }
         }
     }
 
@@ -203,47 +215,102 @@ public class SchemaGenerator {
             throws SQLException {
         Map<String, ColumnInfo> columns = new HashMap<>();
 
-        if (dbType == DatabaseConfig.DatabaseType.MYSQL) {
-            String sql = "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY " +
-                    "FROM information_schema.columns " +
-                    "WHERE table_schema = DATABASE() AND table_name = ?";
+        switch (dbType) {
+            case MYSQL:
+                String mysqlSql = "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY " +
+                        "FROM information_schema.columns " +
+                        "WHERE table_schema = DATABASE() AND table_name = ?";
 
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setString(1, tableName);
-                try (ResultSet rs = pstmt.executeQuery()) {
+                try (PreparedStatement pstmt = conn.prepareStatement(mysqlSql)) {
+                    pstmt.setString(1, tableName);
+                    try (ResultSet rs = pstmt.executeQuery()) {
+                        while (rs.next()) {
+                            String columnName = rs.getString("COLUMN_NAME");
+                            String columnType = rs.getString("COLUMN_TYPE");
+                            boolean nullable = "YES".equals(rs.getString("IS_NULLABLE"));
+                            String columnKey = rs.getString("COLUMN_KEY");
+                            boolean isPrimaryKey = "PRI".equals(columnKey);
+                            boolean unique = "UNI".equals(columnKey);
+
+                            columns.put(columnName, new ColumnInfo(
+                                    columnName, columnType, nullable, isPrimaryKey, unique
+                            ));
+                        }
+                    }
+                }
+                break;
+
+            case POSTGRESQL:
+                String pgSql = "SELECT column_name, data_type, is_nullable, " +
+                        "character_maximum_length, numeric_precision, numeric_scale " +
+                        "FROM information_schema.columns " +
+                        "WHERE table_schema = 'public' AND table_name = ?";
+
+                try (PreparedStatement pstmt = conn.prepareStatement(pgSql)) {
+                    pstmt.setString(1, tableName);
+                    try (ResultSet rs = pstmt.executeQuery()) {
+                        while (rs.next()) {
+                            String columnName = rs.getString("column_name");
+                            String dataType = rs.getString("data_type");
+                            Integer maxLength = (Integer) rs.getObject("character_maximum_length");
+
+                            // Construir tipo completo
+                            String fullType = dataType.toUpperCase();
+                            if (maxLength != null && (fullType.contains("VARCHAR") || fullType.contains("CHAR"))) {
+                                fullType = fullType + "(" + maxLength + ")";
+                            }
+
+                            boolean nullable = "YES".equals(rs.getString("is_nullable"));
+
+                            // Verificar se é PK
+                            boolean isPrimaryKey = isPrimaryKeyPostgres(conn, tableName, columnName);
+
+                            columns.put(columnName, new ColumnInfo(
+                                    columnName, fullType, nullable, isPrimaryKey, false
+                            ));
+                        }
+                    }
+                }
+                break;
+            case SQLITE:
+            default:
+                String sqliteSql = "PRAGMA table_info(" + tableName + ")";
+                try (Statement stmt = conn.createStatement();
+                     ResultSet rs = stmt.executeQuery(sqliteSql)) {
+
                     while (rs.next()) {
-                        String columnName = rs.getString("COLUMN_NAME");
-                        String columnType = rs.getString("COLUMN_TYPE");
-                        boolean nullable = "YES".equals(rs.getString("IS_NULLABLE"));
-                        String columnKey = rs.getString("COLUMN_KEY");
-                        boolean isPrimaryKey = "PRI".equals(columnKey);
-                        boolean unique = "UNI".equals(columnKey);
+                        String columnName = rs.getString("name");
+                        String dataType = rs.getString("type");
+                        boolean nullable = rs.getInt("notnull") == 0;
+                        boolean isPrimaryKey = rs.getInt("pk") > 0;
 
                         columns.put(columnName, new ColumnInfo(
-                                columnName, columnType, nullable, isPrimaryKey, unique
+                                columnName, dataType, nullable, isPrimaryKey, false
                         ));
                     }
                 }
-            }
-        } else {
-            String sql = "PRAGMA table_info(" + tableName + ")";
-            try (Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery(sql)) {
-
-                while (rs.next()) {
-                    String columnName = rs.getString("name");
-                    String dataType = rs.getString("type");
-                    boolean nullable = rs.getInt("notnull") == 0;
-                    boolean isPrimaryKey = rs.getInt("pk") > 0;
-
-                    columns.put(columnName, new ColumnInfo(
-                            columnName, dataType, nullable, isPrimaryKey, false
-                    ));
-                }
-            }
+                break;
         }
 
         return columns;
+    }
+
+
+    private boolean isPrimaryKeyPostgres(Connection conn, String tableName, String columnName)
+            throws SQLException {
+        String sql = "SELECT COUNT(*) FROM information_schema.table_constraints tc " +
+                "JOIN information_schema.key_column_usage kcu " +
+                "ON tc.constraint_name = kcu.constraint_name " +
+                "WHERE tc.constraint_type = 'PRIMARY KEY' " +
+                "AND tc.table_name = ? AND kcu.column_name = ?";
+
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, tableName);
+            pstmt.setString(2, columnName);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
+            }
+        }
     }
 
     private Map<String, ColumnInfo> getExpectedColumns(Class<?> entityClass,
@@ -435,14 +502,27 @@ public class SchemaGenerator {
                                                  DatabaseConfig.DatabaseType dbType) {
         StringBuilder sql = new StringBuilder();
         sql.append("ALTER TABLE ").append(tableName);
-        sql.append(" MODIFY COLUMN ").append(column.name);
-        sql.append(" ").append(column.dataType);
 
-        if (!column.nullable) {
+        switch (dbType) {
+            case MYSQL:
+                sql.append(" MODIFY COLUMN ");
+                break;
+            case POSTGRESQL:
+                sql.append(" ALTER COLUMN ").append(column.name)
+                        .append(" TYPE ");
+                // PostgreSQL precisa de comandos separados para NOT NULL
+                return sql.append(column.dataType).toString();
+            case SQLITE:
+                return "// SQLite doesn't support ALTER COLUMN";
+        }
+
+        sql.append(column.name).append(" ").append(column.dataType);
+
+        if (!column.nullable && dbType != DatabaseConfig.DatabaseType.POSTGRESQL) {
             sql.append(" NOT NULL");
         }
 
-        if (column.unique) {
+        if (column.unique && dbType != DatabaseConfig.DatabaseType.POSTGRESQL) {
             sql.append(" UNIQUE");
         }
 
@@ -532,10 +612,19 @@ public class SchemaGenerator {
             def.append(" PRIMARY KEY");
 
             if (id.autoIncrement() && isNumericType(field.getType())) {
-                if (dbType == DatabaseConfig.DatabaseType.MYSQL) {
-                    def.append(" AUTO_INCREMENT");
-                } else {
-                    def.append(" AUTOINCREMENT");
+                switch (dbType) {
+                    case MYSQL:
+                        def.append(" AUTO_INCREMENT");
+                        break;
+                    case POSTGRESQL:
+                        // PostgreSQL usa SERIAL ou BIGSERIAL
+                        // Reconstruir a definição
+                        return columnName + " " +
+                                (field.getType() == Long.class || field.getType() == long.class ?
+                                        "BIGSERIAL" : "SERIAL") + " PRIMARY KEY";
+                    case SQLITE:
+                        def.append(" AUTOINCREMENT");
+                        break;
                 }
             }
         }
@@ -556,37 +645,84 @@ public class SchemaGenerator {
                                  DatabaseConfig.DatabaseType dbType,
                                  boolean isAutoIncrementPK) {
         if (javaType == java.time.LocalDateTime.class) {
-            return dbType == DatabaseConfig.DatabaseType.MYSQL ? "DATETIME" : "TEXT";
+            return switch (dbType) {
+                case MYSQL -> "DATETIME";
+                case POSTGRESQL -> "TIMESTAMP";
+                case SQLITE -> "TEXT";
+                default -> "TEXT";
+            };
         } else if (javaType == java.time.LocalDate.class) {
-            return dbType == DatabaseConfig.DatabaseType.MYSQL ? "DATE" : "TEXT";
+            return switch (dbType) {
+                case MYSQL, POSTGRESQL -> "DATE";
+                case SQLITE -> "TEXT";
+                default -> "TEXT";
+            };
         } else if (javaType == java.time.LocalTime.class) {
-            return dbType == DatabaseConfig.DatabaseType.MYSQL ? "TIME" : "TEXT";
+            return switch (dbType) {
+                case MYSQL, POSTGRESQL -> "TIME";
+                case SQLITE -> "TEXT";
+                default -> "TEXT";
+            };
         } else if (javaType == Long.class || javaType == long.class) {
             if (dbType == DatabaseConfig.DatabaseType.SQLITE && isAutoIncrementPK) {
                 return "INTEGER";
             }
-            return dbType == DatabaseConfig.DatabaseType.SQLITE ? "INTEGER" : "BIGINT";
+            return switch (dbType) {
+                case SQLITE -> "INTEGER";
+                case MYSQL, POSTGRESQL -> "BIGINT";
+                default -> "INTEGER";
+            };
         } else if (javaType == Integer.class || javaType == int.class) {
-            return "INTEGER";
+            return switch (dbType) {
+                case SQLITE -> "INTEGER";
+                case MYSQL, POSTGRESQL -> "INT";
+                default -> "INTEGER";
+            };
         } else if (javaType == String.class) {
-            return dbType == DatabaseConfig.DatabaseType.MYSQL ?
-                    "VARCHAR(" + length + ")" : "TEXT";
+            return switch (dbType) {
+                case MYSQL, POSTGRESQL -> "VARCHAR(" + length + ")";
+                case SQLITE -> "TEXT";
+                default -> "TEXT";
+            };
         } else if (javaType == Boolean.class || javaType == boolean.class) {
-            return dbType == DatabaseConfig.DatabaseType.MYSQL ? "TINYINT(1)" : "INTEGER";
+            return switch (dbType) {
+                case MYSQL -> "TINYINT(1)";
+                case POSTGRESQL -> "BOOLEAN";
+                case SQLITE -> "INTEGER";
+                default -> "INTEGER";
+            };
         } else if (javaType == Double.class || javaType == double.class) {
-            return dbType == DatabaseConfig.DatabaseType.SQLITE ? "REAL" : "DOUBLE";
+            return switch (dbType) {
+                case MYSQL -> "DOUBLE";
+                case POSTGRESQL -> "DOUBLE PRECISION";
+                case SQLITE -> "REAL";
+                default -> "REAL";
+            };
         } else if (javaType == Float.class || javaType == float.class) {
-            return dbType == DatabaseConfig.DatabaseType.SQLITE ? "REAL" : "FLOAT";
-        } else if (javaType == Date.class ||
+            return switch (dbType) {
+                case MYSQL, POSTGRESQL -> "FLOAT";
+                case SQLITE -> "REAL";
+                default -> "REAL";
+            };
+        } else if (javaType == java.util.Date.class ||
                 javaType == java.sql.Date.class ||
                 javaType == java.sql.Timestamp.class) {
-            return dbType == DatabaseConfig.DatabaseType.MYSQL ? "DATETIME" : "TEXT";
+            return switch (dbType) {
+                case MYSQL -> "DATETIME";
+                case POSTGRESQL -> "TIMESTAMP";
+                case SQLITE -> "TEXT";
+                default -> "TEXT";
+            };
         }
         return "TEXT";
     }
 
     private String getColumnTypeForForeignKey(DatabaseConfig.DatabaseType dbType) {
-        return dbType == DatabaseConfig.DatabaseType.SQLITE ? "INTEGER" : "BIGINT";
+        return switch (dbType) {
+            case SQLITE -> "INTEGER";
+            case MYSQL, POSTGRESQL -> "BIGINT";
+            default -> "INTEGER";
+        };
     }
 
     private String generateForeignKey(Field field, String tableName,

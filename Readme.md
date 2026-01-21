@@ -8,12 +8,12 @@
 Gradle Groovy
 
 ```Groovy
-implementation 'com.vcinsidedigital:orm-utils:1.0.1'
+implementation 'com.vcinsidedigital:orm-utils:1.0.2'
 ```
 
 Gradle Kotlin
 ```kotlin
-implementation('com.vcinsidedigital:orm-utils:1.0.1')
+implementation('com.vcinsidedigital:orm-utils:1.0.2')
 ```
 
 Maven
@@ -22,12 +22,12 @@ Maven
     <dependency>
         <groupId>com.vcinsidedigital</groupId>
         <artifactId>orm-utils</artifactId>
-        <version>1.0.1</version>
+        <version>1.0.2</version>
     </dependency>
 </dependencies>
 ```
 
-A lightweight and simple ORM (Object-Relational Mapping) library for Java, supporting MySQL and SQLite.
+A lightweight and simple ORM (Object-Relational Mapping) library for Java, supporting PostgreSQL and SQL Server.
 
 ## 📋 Table of Contents
 
@@ -52,7 +52,7 @@ A lightweight and simple ORM (Object-Relational Mapping) library for Java, suppo
 ## ✨ Features
 
 - 🚀 **Simple and Lightweight** - No heavy dependencies, easy to integrate
-- 🗄️ **Multi-Database** - Support for MySQL and SQLite
+- 🗄️ **Multi-Database** - Support for PostgreSQL and SQL Server
 - 🔄 **Auto Schema Generation** - Automatically generates tables from entities
 - 🔧 **Auto Schema Update** - Detects and applies schema changes automatically (with column removal support)
 - 📦 **Connection Pooling** - Built-in and configurable connection pool
@@ -66,7 +66,7 @@ A lightweight and simple ORM (Object-Relational Mapping) library for Java, suppo
 ## 📦 Requirements
 
 - Java 17 or higher
-- MySQL 8.0+ or SQLite 3.x
+- PostgreSQL 12+ or SQL Server 2017+
 - Maven or Gradle (for dependency management)
 
 ## 🚀 Installation
@@ -74,43 +74,68 @@ A lightweight and simple ORM (Object-Relational Mapping) library for Java, suppo
 ### Maven Dependencies
 
 ```xml
-<!-- MySQL Driver (if using MySQL) -->
-<dependency>
-    <groupId>mysql</groupId>
-    <artifactId>mysql-connector-java</artifactId>
-    <version>8.0.33</version>
-</dependency>
+<dependencies>
+    <!-- PostgreSQL Driver -->
+    <dependency>
+        <groupId>org.postgresql</groupId>
+        <artifactId>postgresql</artifactId>
+        <version>42.7.7</version>
+    </dependency>
 
-<!-- SQLite Driver (if using SQLite) -->
-<dependency>
-    <groupId>org.xerial</groupId>
-    <artifactId>sqlite-jdbc</artifactId>
-    <version>3.42.0.0</version>
-</dependency>
+    <!-- SQL Server Driver -->
+    <dependency>
+        <groupId>com.microsoft.sqlserver</groupId>
+        <artifactId>mssql-jdbc</artifactId>
+        <version>13.2.1.jre11</version>
+    </dependency>
 
-<!-- SLF4J for logging -->
-<dependency>
-    <groupId>org.slf4j</groupId>
-    <artifactId>slf4j-api</artifactId>
-    <version>1.7.36</version>
-</dependency>
-<dependency>
-    <groupId>org.slf4j</groupId>
-    <artifactId>slf4j-simple</artifactId>
-    <version>1.7.36</version>
-</dependency>
+    <!-- MySQL Driver (legacy support) -->
+    <dependency>
+        <groupId>com.mysql</groupId>
+        <artifactId>mysql-connector-j</artifactId>
+        <version>8.2.0</version>
+    </dependency>
+
+    <!-- SQLite Driver (legacy support) -->
+    <dependency>
+        <groupId>org.xerial</groupId>
+        <artifactId>sqlite-jdbc</artifactId>
+        <version>3.44.1.0</version>
+    </dependency>
+
+    <!-- SLF4J for logging -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.9</version>
+    </dependency>
+    <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-classic</artifactId>
+        <version>1.4.14</version>
+    </dependency>
+</dependencies>
 ```
 
 ### Gradle
 
 ```gradle
 dependencies {
-    implementation 'mysql:mysql-connector-java:8.0.33'
-    // or
-    implementation 'org.xerial:sqlite-jdbc:3.42.0.0'
+    // PostgreSQL
+    implementation 'org.postgresql:postgresql:42.7.7'
+    
+    // SQL Server
+    implementation 'com.microsoft.sqlserver:mssql-jdbc:13.2.1.jre11'
+    
+    // MySQL (legacy)
+    implementation 'com.mysql:mysql-connector-j:8.2.0'
+    
+    // SQLite (legacy)
+    implementation 'org.xerial:sqlite-jdbc:3.44.1.0'
 
-    implementation 'org.slf4j:slf4j-api:1.7.36'
-    implementation 'org.slf4j:slf4j-simple:1.7.36'
+    // Logging
+    implementation 'org.slf4j:slf4j-api:2.0.9'
+    implementation 'ch.qos.logback:logback-classic:1.4.14'
 }
 ```
 
@@ -142,17 +167,21 @@ public class User {
 
 ### 2. Configure the ORM
 
+#### PostgreSQL Configuration
+
 ```java
 import com.vcinsidedigital.orm_utils.ORM;
 import com.vcinsidedigital.orm_utils.config.DatabaseConfig;
 
 public class Main {
     public static void main(String[] args) throws Exception {
-        // Configure database
-        DatabaseConfig config = DatabaseConfig.builder()
-                .mysql("localhost", 3306, "my_database")
-                .credentials("username", "password")
-                .build();
+        // PostgreSQL
+        DatabaseConfig config = new DatabaseConfig(
+            "jdbc:postgresql://localhost:5432/my_database",
+            "postgres",
+            "password",
+            DatabaseConfig.DatabaseType.POSTGRESQL
+        );
 
         // Initialize ORM
         ORM orm = new ORM(config)
@@ -163,6 +192,48 @@ public class Main {
         EntityManager em = orm.getEntityManager();
     }
 }
+```
+
+#### SQL Server Configuration
+
+```java
+// SQL Server
+DatabaseConfig config = new DatabaseConfig(
+    "jdbc:sqlserver://localhost:1433;databaseName=my_database;encrypt=true;trustServerCertificate=true",
+    "sa",
+    "YourPassword123",
+    DatabaseConfig.DatabaseType.SQLSERVER
+);
+
+ORM orm = new ORM(config)
+        .registerEntity(User.class)
+        .initialize();
+```
+
+#### Connection String Examples
+
+**PostgreSQL:**
+```java
+// Local
+"jdbc:postgresql://localhost:5432/database_name"
+
+// Remote with SSL
+"jdbc:postgresql://host:5432/database?ssl=true&sslmode=require"
+
+// With schema
+"jdbc:postgresql://localhost:5432/database?currentSchema=myschema"
+```
+
+**SQL Server:**
+```java
+// Local (Windows Authentication)
+"jdbc:sqlserver://localhost:1433;databaseName=mydb;integratedSecurity=true"
+
+// SQL Authentication
+"jdbc:sqlserver://localhost:1433;databaseName=mydb;encrypt=true;trustServerCertificate=true"
+
+// Azure SQL Database
+"jdbc:sqlserver://myserver.database.windows.net:1433;database=mydb;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net"
 ```
 
 ### 3. Perform Operations
@@ -191,22 +262,39 @@ orm.shutdown();
 
 ## ⚙️ Configuration
 
-### MySQL
+### PostgreSQL
 
 ```java
-DatabaseConfig config = DatabaseConfig.builder()
-    .mysql("localhost", 3306, "database_name")
-    .credentials("username", "password")
-    .build();
+DatabaseConfig config = new DatabaseConfig(
+    "jdbc:postgresql://localhost:5432/database_name",
+    "username",
+    "password",
+    DatabaseConfig.DatabaseType.POSTGRESQL
+);
 ```
 
-### SQLite
+**Common PostgreSQL Options:**
+- `?ssl=true` - Enable SSL connection
+- `?sslmode=require` - Require SSL
+- `?currentSchema=schema_name` - Set default schema
+- `?ApplicationName=MyApp` - Set application name for monitoring
+
+### SQL Server
 
 ```java
-DatabaseConfig config = DatabaseConfig.builder()
-    .sqlite("path/to/database.db")
-    .build();
+DatabaseConfig config = new DatabaseConfig(
+    "jdbc:sqlserver://localhost:1433;databaseName=database_name;encrypt=true;trustServerCertificate=true",
+    "username",
+    "password",
+    DatabaseConfig.DatabaseType.SQLSERVER
+);
 ```
+
+**Common SQL Server Options:**
+- `;encrypt=true` - Enable encryption
+- `;trustServerCertificate=true` - Trust server certificate (dev only)
+- `;integratedSecurity=true` - Use Windows authentication
+- `;loginTimeout=30` - Connection timeout in seconds
 
 ## 📌 Annotations
 
@@ -234,7 +322,7 @@ private Long id;
 private String uuid;
 ```
 
-> **⚠️ Important:** For SQLite with auto-increment, use `Long` instead of `Integer`.
+> **⚠️ Important:** For auto-increment, use `Long` instead of `Integer`.
 
 ### @Column
 
@@ -254,15 +342,18 @@ private String name;
 
 #### Supported Types
 
-| Java Type | MySQL | SQLite |
-|-----------|-------|--------|
-| `String` | VARCHAR(n) | TEXT |
-| `Long`/`Integer` | BIGINT/INT | INTEGER |
-| `Double`/`Float` | DOUBLE/FLOAT | REAL |
-| `Boolean` | TINYINT(1) | INTEGER |
-| `LocalDateTime` | DATETIME | TEXT |
-| `LocalDate` | DATE | TEXT |
-| `LocalTime` | TIME | TEXT |
+| Java Type | PostgreSQL | SQL Server |
+|-----------|-----------|------------|
+| `String` | VARCHAR(n) / TEXT | VARCHAR(n) / NVARCHAR(n) |
+| `Long` | BIGINT | BIGINT |
+| `Integer` | INTEGER | INT |
+| `Double` | DOUBLE PRECISION | FLOAT |
+| `Float` | REAL | REAL |
+| `Boolean` | BOOLEAN | BIT |
+| `LocalDateTime` | TIMESTAMP | DATETIME2 |
+| `LocalDate` | DATE | DATE |
+| `LocalTime` | TIME | TIME |
+| `BigDecimal` | DECIMAL | DECIMAL |
 
 ### @ManyToOne
 
@@ -576,7 +667,7 @@ INFO - Executing: ALTER TABLE users ADD COLUMN phone VARCHAR(20)
 INFO - ✓ Schema updated successfully
 ```
 
-#### Modifying Columns (MySQL)
+#### Modifying Columns
 
 ```java
 // Before
@@ -590,24 +681,17 @@ private String username;
 orm.initialize();
 ```
 
-**Output (MySQL):**
+**Output (PostgreSQL/SQL Server):**
 ```
 INFO - Detected 1 schema changes for table 'users'
-INFO - Executing: ALTER TABLE users MODIFY COLUMN username VARCHAR(100) NOT NULL UNIQUE
+INFO - Executing: ALTER TABLE users ALTER COLUMN username TYPE VARCHAR(100)
+INFO - Executing: ALTER TABLE users ALTER COLUMN username SET NOT NULL
 INFO - ✓ Schema updated successfully
 ```
 
-**Output (SQLite):**
-```
-⚠ Column 'username' needs modification but SQLite doesn't support ALTER COLUMN
-   Current: VARCHAR(50)
-   Expected: VARCHAR(100) NOT NULL UNIQUE
-   You'll need to create a migration to rebuild the table
-```
+#### Removing Columns
 
-#### Removing Columns (New Feature!)
-
-When you remove a field from your entity, the ORM **automatically removes** the column from the database (MySQL).
+When you remove a field from your entity, the ORM **automatically removes** the column from the database.
 
 ```java
 @Entity(table = "users")
@@ -627,18 +711,12 @@ public class User {
 orm.initialize();
 ```
 
-**Output (MySQL):**
+**Output:**
 ```
 INFO - Table 'users' exists, checking for updates...
 ⚠ Column 'phone' removed from entity, will DROP from database
 INFO - Executing: ALTER TABLE users DROP COLUMN phone
 INFO - ✓ Schema updated successfully
-```
-
-**Output (SQLite):**
-```
-⚠ Column 'phone' removed from entity but SQLite doesn't support DROP COLUMN easily
-   You'll need to manually rebuild the table without this column
 ```
 
 #### Controlling Auto-Drop Behavior
@@ -652,10 +730,10 @@ ORM orm = new ORM(config)
         .initialize();  // Will drop removed columns
 
 // Disable auto-drop (safe mode)
-SchemaGenerator schema = new SchemaGenerator();
-schema.setAutoDropColumns(false)  // Only warn, don't drop
-      .addEntity(User.class);
-schema.generateSchema();
+ORM orm = new ORM(config)
+        .setAutoDropColumns(false)
+        .registerEntity(User.class)
+        .initialize();
 ```
 
 **Output (when disabled):**
@@ -668,15 +746,15 @@ schema.generateSchema();
 
 ### Auto-Update Features Summary
 
-| Feature | MySQL | SQLite | Notes |
-|---------|-------|--------|-------|
+| Feature | PostgreSQL | SQL Server | Notes |
+|---------|-----------|------------|-------|
 | Create tables | ✅ Yes | ✅ Yes | Automatic with dependency ordering |
 | Add new columns | ✅ Yes | ✅ Yes | Automatic |
-| Modify column type | ✅ Yes | ❌ No | Requires manual migration for SQLite |
-| Modify nullable | ✅ Yes | ❌ No | Requires manual migration for SQLite |
-| Modify unique | ✅ Yes | ❌ No | Requires manual migration for SQLite |
-| Modify length | ✅ Yes | ❌ No | Requires manual migration for SQLite |
-| Remove columns | ✅ Yes | ⚠️ Warns | Automatic for MySQL, manual for SQLite |
+| Modify column type | ✅ Yes | ✅ Yes | Automatic |
+| Modify nullable | ✅ Yes | ✅ Yes | Automatic |
+| Modify unique | ✅ Yes | ✅ Yes | Automatic |
+| Modify length | ✅ Yes | ✅ Yes | Automatic |
+| Remove columns | ✅ Yes | ✅ Yes | Automatic (configurable) |
 | Rename columns | ❌ No | ❌ No | Use migrations |
 | Circular dependencies | ⚠️ Warns | ⚠️ Warns | Detected and logged |
 
@@ -698,6 +776,7 @@ ORM orm = new ORM(config)
 
 This creates a file like `migrations/Version20260119123456.java`:
 
+**For PostgreSQL:**
 ```java
 package migrations;
 
@@ -719,7 +798,7 @@ public class Version20260119123456 extends Migration {
         // Creates tables in dependency order
         context.execute(
             "CREATE TABLE IF NOT EXISTS users (\n" +
-            "    id BIGINT PRIMARY KEY AUTO_INCREMENT,\n" +
+            "    id BIGSERIAL PRIMARY KEY,\n" +
             "    username VARCHAR(50) NOT NULL UNIQUE,\n" +
             "    email VARCHAR(100) NOT NULL\n" +
             ")"
@@ -727,7 +806,7 @@ public class Version20260119123456 extends Migration {
         
         context.execute(
             "CREATE TABLE IF NOT EXISTS posts (\n" +
-            "    id BIGINT PRIMARY KEY AUTO_INCREMENT,\n" +
+            "    id BIGSERIAL PRIMARY KEY,\n" +
             "    title VARCHAR(200) NOT NULL,\n" +
             "    content TEXT,\n" +
             "    user_id BIGINT,\n" +
@@ -736,7 +815,7 @@ public class Version20260119123456 extends Migration {
         );
         
         // Drop removed columns
-        context.execute("ALTER TABLE users DROP COLUMN phone");
+        context.execute("ALTER TABLE users DROP COLUMN IF EXISTS phone");
     }
     
     @Override
@@ -749,14 +828,32 @@ public class Version20260119123456 extends Migration {
 }
 ```
 
+**For SQL Server:**
+```java
+@Override
+public void up(MigrationContext context) throws Exception {
+    context.execute(
+        "IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[users]'))\n" +
+        "BEGIN\n" +
+        "    CREATE TABLE users (\n" +
+        "        id BIGINT IDENTITY(1,1) PRIMARY KEY,\n" +
+        "        username NVARCHAR(50) NOT NULL UNIQUE,\n" +
+        "        email NVARCHAR(100) NOT NULL\n" +
+        "    )\n" +
+        "END"
+    );
+}
+```
+
 **Features of Auto-Generated Migrations:**
 - ✅ Tables created in dependency order (no FK errors)
 - ✅ Handles new tables
 - ✅ Handles new columns
-- ✅ Handles modified columns (MySQL)
-- ✅ Handles removed columns (MySQL)
+- ✅ Handles modified columns
+- ✅ Handles removed columns
 - ✅ Generates both UP and DOWN operations
 - ✅ Detects circular dependencies
+- ✅ Database-specific syntax (PostgreSQL vs SQL Server)
 
 #### Manual Migrations
 
@@ -902,7 +999,7 @@ System.out.println(loadedPost.getAuthor().getName());  // Automatically loaded
 
 ## 📚 Examples
 
-### Blog System with Auto-Schema Management
+### Blog System with PostgreSQL
 
 ```java
 // Entities
@@ -946,10 +1043,12 @@ public class Post {
 // Usage
 public class BlogApp {
     public static void main(String[] args) throws Exception {
-        DatabaseConfig config = DatabaseConfig.builder()
-            .mysql("localhost", 3306, "blog")
-            .credentials("root", "password")
-            .build();
+        DatabaseConfig config = new DatabaseConfig(
+            "jdbc:postgresql://localhost:5432/blog_db",
+            "postgres",
+            "password",
+            DatabaseConfig.DatabaseType.POSTGRESQL
+        );
 
         // Tables are created in correct order automatically
         ORM orm = new ORM(config)
@@ -979,6 +1078,35 @@ public class BlogApp {
         for (Post p : posts) {
             System.out.println(p.getTitle() + " by " + p.getAuthor().getName());
         }
+
+        orm.shutdown();
+    }
+}
+```
+
+### Enterprise Application with SQL Server
+
+```java
+public class EnterpriseApp {
+    public static void main(String[] args) throws Exception {
+        DatabaseConfig config = new DatabaseConfig(
+            "jdbc:sqlserver://sqlserver.company.com:1433;databaseName=production;encrypt=true",
+            "app_user",
+            "SecurePassword123!",
+            DatabaseConfig.DatabaseType.SQLSERVER
+        );
+
+        ORM orm = new ORM(config)
+            .registerEntity(User.class)
+            .registerEntity(Order.class)
+            .registerEntity(Product.class)
+            .initialize();
+
+        EntityManager em = orm.getEntityManager();
+
+        // Business logic
+        User customer = em.findOneBy(User.class, "email", "customer@company.com");
+        List<Order> orders = em.findBy(Order.class, "user_id", customer.getId());
 
         orm.shutdown();
     }
@@ -1044,36 +1172,7 @@ public class Product {
 
 orm.initialize(); 
 // Adds 'cost' and 'markup' columns
-// Drops 'price' column (MySQL)
-```
-
-### Desktop Application with SQLite
-
-```java
-public class DesktopApp {
-    public static void main(String[] args) throws Exception {
-        DatabaseConfig config = DatabaseConfig.builder()
-            .sqlite("app-data.db")
-            .build();
-
-        ORM orm = new ORM(config)
-            .registerEntity(User.class)
-            .registerEntity(Configuration.class)
-            .initialize();
-
-        EntityManager em = orm.getEntityManager();
-
-        // Use normally
-        User user = new User();
-        user.setName("Local User");
-        em.persist(user);
-        
-        // Advanced queries work the same
-        User foundUser = em.findOneBy(User.class, "name", "Local User");
-
-        orm.shutdown();
-    }
-}
+// Drops 'price' column automatically
 ```
 
 ## ⚠️ Limitations
@@ -1083,15 +1182,19 @@ public class DesktopApp {
 - **Query Builder**: Limited to provided query methods
 - **Transactions**: Must be managed manually
 - **OneToMany/ManyToMany Collections**: Not automatically loaded
-- **Schema Modifications (SQLite)**: Limited ALTER TABLE support (no MODIFY COLUMN, limited DROP COLUMN)
 - **JOIN Queries**: Not supported (use separate queries)
 - **Column Renaming**: Not detected automatically (use migrations)
 
 ## 🆕 What's New in Recent Updates
 
+### Multi-Database Support
+- ✅ **PostgreSQL Support**: Full support for PostgreSQL with native types and syntax
+- ✅ **SQL Server Support**: Full support for SQL Server with native types and syntax
+- ✅ **Database-Specific Migrations**: Auto-generated migrations use correct syntax for each database
+
 ### Schema Management Improvements
 - ✅ **Automatic Dependency Resolution**: Tables are created in the correct order based on foreign key dependencies
-- ✅ **Automatic Column Removal**: Removed fields are automatically dropped from the database (MySQL)
+- ✅ **Automatic Column Removal**: Removed fields are automatically dropped from the database
 - ✅ **Enhanced Migration Generation**: Auto-generated migrations now include all schema changes
 - ✅ **Smart Ordering**: Migration system uses topological sorting to prevent foreign key errors
 - ✅ **Configurable Auto-Drop**: Control whether columns should be automatically removed
@@ -1102,6 +1205,7 @@ public class DesktopApp {
 - ✅ **Complete UP/DOWN**: Both migration directions are generated automatically
 - ✅ **Column Removal Support**: Tracks and reverses column drops
 - ✅ **Circular Dependency Detection**: Warns about circular foreign key relationships
+- ✅ **Database-Specific Syntax**: Generated SQL respects database differences
 
 ## 🤝 Contributing
 
@@ -1117,7 +1221,7 @@ Contributions are welcome! Please:
 - Lazy loading implementation
 - Transaction management
 - Query builder enhancements
-- Additional database support (PostgreSQL, Oracle)
+- Additional database support (Oracle, MariaDB)
 - Performance optimizations
 - Better circular dependency handling
 

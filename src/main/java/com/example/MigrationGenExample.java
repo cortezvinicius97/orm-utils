@@ -5,11 +5,9 @@ import com.example.entity.Tag;
 import com.example.entity.User;
 import com.vcinsidedigital.orm_utils.ORM;
 import com.vcinsidedigital.orm_utils.config.DatabaseConfig;
-import com.vcinsidedigital.orm_utils.migration.MigrationManager;
-import migrations.Version20260118233630;
 
 
-public class MigrationExample
+public class MigrationGenExample
 {
     public static void main(String[] args){
         try {
@@ -20,10 +18,21 @@ public class MigrationExample
                     .build();*/
 
             // Or MySQL:
-            DatabaseConfig config = DatabaseConfig.builder()
+           /* DatabaseConfig config = DatabaseConfig.builder()
                      .mysql("localhost", 3306, "teste")
                      .credentials("root", "123456")
-                     .build();
+                     .build();*/
+
+            // Or Postgres
+            /*DatabaseConfig config = DatabaseConfig.builder()
+                    .postgresql("localhost", 5432, "teste")
+                    .credentials("postgres", "123456")
+                    .build();*/
+
+            // Configure database sqlserver
+            DatabaseConfig config = DatabaseConfig.builder()
+                    .sqlserver("localhost", 1433, "teste").
+                    credentials("sa", "123456").build();
 
 
             ORM orm = new ORM(config)
@@ -31,11 +40,6 @@ public class MigrationExample
                     .registerEntity(Posts.class)
                     .registerEntity(Tag.class)
                     .createMigrations();
-
-            MigrationManager migrationManager = orm.getMigrationManager();
-            migrationManager.addMigration(new Version20260118233630());
-            migrationManager.migrate();
-
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

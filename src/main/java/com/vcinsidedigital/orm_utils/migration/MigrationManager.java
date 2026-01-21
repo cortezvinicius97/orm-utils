@@ -1,6 +1,7 @@
 package com.vcinsidedigital.orm_utils.migration;
 
 import com.vcinsidedigital.orm_utils.config.ConnectionPool;
+import com.vcinsidedigital.orm_utils.config.DatabaseConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -13,6 +14,11 @@ import java.util.*;
 public class MigrationManager {
     private static final Logger logger = LoggerFactory.getLogger(MigrationManager.class);
     private final List<Migration> migrations = new ArrayList<>();
+    private final DatabaseConfig.DatabaseType databaseType;
+
+    public MigrationManager(DatabaseConfig.DatabaseType databaseType) {
+        this.databaseType = databaseType;
+    }
 
     public void addMigration(Migration migration) {
         migrations.add(migration);
@@ -50,12 +56,27 @@ public class MigrationManager {
 
     private void ensureMigrationTable() throws SQLException {
         try (Connection conn = ConnectionPool.getInstance().getConnection()) {
-            String sql = """
-                CREATE TABLE IF NOT EXISTS schema_migrations (
-                    version VARCHAR(255) PRIMARY KEY,
-                    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """;
+            String sql;
+
+            if (databaseType == DatabaseConfig.DatabaseType.SQLSERVER) {
+                sql = """
+                    IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[schema_migrations]') AND type in (N'U'))
+                    BEGIN
+                        CREATE TABLE schema_migrations (
+                            version VARCHAR(255) PRIMARY KEY,
+                            applied_at DATETIME DEFAULT GETDATE()
+                        )
+                    END
+                    """;
+            } else {
+                sql = """
+                    CREATE TABLE IF NOT EXISTS schema_migrations (
+                        version VARCHAR(255) PRIMARY KEY,
+                        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """;
+            }
+
             conn.createStatement().execute(sql);
         }
     }

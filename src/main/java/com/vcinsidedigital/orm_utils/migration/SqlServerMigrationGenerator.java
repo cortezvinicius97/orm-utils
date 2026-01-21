@@ -2,7 +2,6 @@ package com.vcinsidedigital.orm_utils.migration;
 
 import com.vcinsidedigital.orm_utils.annotations.*;
 import com.vcinsidedigital.orm_utils.config.ConnectionPool;
-import com.vcinsidedigital.orm_utils.config.DatabaseConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,24 +17,22 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
-public class MigrationGenerator {
-    private static final Logger logger = LoggerFactory.getLogger(MigrationGenerator.class);
+/**
+ * MigrationGenerator específico para SQL Server
+ */
+public class SqlServerMigrationGenerator {
+    private static final Logger logger = LoggerFactory.getLogger(SqlServerMigrationGenerator.class);
     private static final String MIGRATIONS_DIR = "src/main/java/migrations";
     private static final String PACKAGE_NAME = "migrations";
 
     private final Set<Class<?>> entities = new HashSet<>();
-    private final DatabaseConfig.DatabaseType dbType;
-
-    public MigrationGenerator(DatabaseConfig.DatabaseType dbType) {
-        this.dbType = dbType;
-    }
 
     public void addEntity(Class<?> entityClass) {
         entities.add(entityClass);
     }
 
     public void generateMigrations() throws Exception {
-        logger.info("=== Starting Migration Generation ===");
+        logger.info("=== Starting SQL Server Migration Generation ===");
 
         createMigrationsDirectory();
 
@@ -48,10 +45,8 @@ public class MigrationGenerator {
         List<String> downStatements = new ArrayList<>();
 
         try (Connection conn = ConnectionPool.getInstance().getConnection()) {
-            // Ordenar entidades por dependências
             List<Class<?>> orderedEntities = sortEntitiesByDependencies();
 
-            // Processar entidades na ordem correta
             for (Class<?> entity : orderedEntities) {
                 String tableName = getTableName(entity);
 
@@ -62,14 +57,13 @@ public class MigrationGenerator {
                 }
             }
 
-            // Gerar tabelas de junção para ManyToMany (sempre por último)
             for (Class<?> entity : orderedEntities) {
                 generateManyToManyStatements(conn, entity, upStatements, downStatements);
             }
         }
 
         if (upStatements.isEmpty()) {
-            logger.info("No schema changes detected. No migration generated.");
+            logger.info("No schema changes detected.");
             return;
         }
 
@@ -81,17 +75,11 @@ public class MigrationGenerator {
         logger.info("Total operations: {} UP, {} DOWN", upStatements.size(), downStatements.size());
     }
 
-    /**
-     * Ordena entidades por dependências: entidades sem foreign keys primeiro,
-     * depois as que dependem delas, e assim por diante.
-     */
     private List<Class<?>> sortEntitiesByDependencies() {
         Map<Class<?>, Set<Class<?>>> dependencies = new HashMap<>();
 
-        // Mapear dependências de cada entidade
         for (Class<?> entity : entities) {
             Set<Class<?>> deps = new HashSet<>();
-
             for (Field field : entity.getDeclaredFields()) {
                 if (field.isAnnotationPresent(ManyToOne.class)) {
                     ManyToOne manyToOne = field.getAnnotation(ManyToOne.class);
@@ -99,18 +87,14 @@ public class MigrationGenerator {
                     if (targetEntity == void.class) {
                         targetEntity = field.getType();
                     }
-
-                    // Só adiciona como dependência se for uma entidade registrada
                     if (entities.contains(targetEntity)) {
                         deps.add(targetEntity);
                     }
                 }
             }
-
             dependencies.put(entity, deps);
         }
 
-        // Ordenação topológica
         List<Class<?>> sorted = new ArrayList<>();
         Set<Class<?>> visited = new HashSet<>();
         Set<Class<?>> visiting = new HashSet<>();
@@ -121,33 +105,23 @@ public class MigrationGenerator {
             }
         }
 
-        logger.info("Entities ordered by dependencies: {}",
-                sorted.stream().map(Class::getSimpleName).toList());
-
+        logger.info("Entities ordered: {}", sorted.stream().map(Class::getSimpleName).toList());
         return sorted;
     }
 
-    private void topologicalSort(Class<?> entity,
-                                 Map<Class<?>, Set<Class<?>>> dependencies,
-                                 Set<Class<?>> visited,
-                                 Set<Class<?>> visiting,
+    private void topologicalSort(Class<?> entity, Map<Class<?>, Set<Class<?>>> deps,
+                                 Set<Class<?>> visited, Set<Class<?>> visiting,
                                  List<Class<?>> sorted) {
         if (visiting.contains(entity)) {
-            logger.warn("Circular dependency detected involving: {}", entity.getSimpleName());
+            logger.warn("Circular dependency: {}", entity.getSimpleName());
             return;
         }
-
-        if (visited.contains(entity)) {
-            return;
-        }
+        if (visited.contains(entity)) return;
 
         visiting.add(entity);
-
-        // Visitar dependências primeiro
-        for (Class<?> dependency : dependencies.get(entity)) {
-            topologicalSort(dependency, dependencies, visited, visiting, sorted);
+        for (Class<?> dep : deps.get(entity)) {
+            topologicalSort(dep, deps, visited, visiting, sorted);
         }
-
         visiting.remove(entity);
         visited.add(entity);
         sorted.add(entity);
@@ -166,8 +140,7 @@ public class MigrationGenerator {
         return LocalDateTime.now().format(formatter);
     }
 
-    private void generateCreateStatements(Class<?> entity,
-                                          List<String> upStatements,
+    private void generateCreateStatements(Class<?> entity, List<String> upStatements,
                                           List<String> downStatements) {
         String createSQL = generateCreateTableSQL(entity);
         upStatements.add(createSQL);
@@ -178,19 +151,19 @@ public class MigrationGenerator {
     }
 
     private void generateAlterStatements(Connection conn, Class<?> entity,
-                                         List<String> upStatements,
-                                         List<String> downStatements) throws SQLException {
+                                         List<String> upStatements, List<String> downStatements)
+            throws SQLException {
         String tableName = getTableName(entity);
 
-        Map<String, ColumnInfo> existingColumns = getExistingColumns(conn, tableName);
-        Map<String, ColumnInfo> expectedColumns = getExpectedColumns(entity);
+        Map<String, ColumnInfo> existing = getExistingColumns(conn, tableName);
+        Map<String, ColumnInfo> expected = getExpectedColumns(entity);
 
         // Novas colunas
-        for (Map.Entry<String, ColumnInfo> entry : expectedColumns.entrySet()) {
+        for (Map.Entry<String, ColumnInfo> entry : expected.entrySet()) {
             String columnName = entry.getKey();
             ColumnInfo expectedCol = entry.getValue();
 
-            if (!existingColumns.containsKey(columnName) && !expectedCol.isPrimaryKey) {
+            if (!existing.containsKey(columnName) && !expectedCol.isPrimaryKey) {
                 String addSQL = generateAddColumnSQL(tableName, expectedCol);
                 upStatements.add(addSQL);
 
@@ -199,40 +172,37 @@ public class MigrationGenerator {
             }
         }
 
-        // Modificações (apenas MySQL)
-        if (dbType == DatabaseConfig.DatabaseType.MYSQL) {
-            for (Map.Entry<String, ColumnInfo> entry : expectedColumns.entrySet()) {
-                String columnName = entry.getKey();
-                ColumnInfo expectedCol = entry.getValue();
+        // Modificações
+        for (Map.Entry<String, ColumnInfo> entry : expected.entrySet()) {
+            String columnName = entry.getKey();
+            ColumnInfo expectedCol = entry.getValue();
 
-                if (existingColumns.containsKey(columnName)) {
-                    ColumnInfo existingCol = existingColumns.get(columnName);
+            if (existing.containsKey(columnName)) {
+                ColumnInfo existingCol = existing.get(columnName);
 
-                    if (!expectedCol.isPrimaryKey && needsModification(existingCol, expectedCol)) {
-                        String modifySQL = generateModifyColumnSQL(tableName, expectedCol);
-                        upStatements.add(modifySQL);
+                if (!expectedCol.isPrimaryKey && needsModification(existingCol, expectedCol)) {
+                    String modifySQL = generateAlterColumnSQL(tableName, expectedCol);
+                    upStatements.add(modifySQL);
 
-                        String revertSQL = generateModifyColumnSQL(tableName, existingCol);
-                        downStatements.add(0, revertSQL);
-                    }
+                    String revertSQL = generateAlterColumnSQL(tableName, existingCol);
+                    downStatements.add(0, revertSQL);
                 }
             }
         }
 
-        // Colunas removidas (comentários)
-        for (Map.Entry<String, ColumnInfo> entry : existingColumns.entrySet()) {
-            String columnName = entry.getKey();
-            if (!expectedColumns.containsKey(columnName)) {
+        // Colunas removidas
+        for (String columnName : existing.keySet()) {
+            if (!expected.containsKey(columnName)) {
                 String comment = "// Column '" + columnName + "' exists in database but not in entity";
                 upStatements.add(comment);
-                upStatements.add("// Uncomment to remove: ALTER TABLE " + tableName + " DROP COLUMN " + columnName);
+                upStatements.add("// Uncomment to remove: " + generateDropColumnSQL(tableName, columnName));
             }
         }
     }
 
     private void generateManyToManyStatements(Connection conn, Class<?> entity,
-                                              List<String> upStatements,
-                                              List<String> downStatements) throws SQLException {
+                                              List<String> upStatements, List<String> downStatements)
+            throws SQLException {
         for (Field field : entity.getDeclaredFields()) {
             if (!field.isAnnotationPresent(ManyToMany.class)) continue;
 
@@ -261,7 +231,7 @@ public class MigrationGenerator {
                 ? toSnakeCase(entityClass.getSimpleName())
                 : entityAnnotation.table();
 
-        StringBuilder sql = new StringBuilder("CREATE TABLE IF NOT EXISTS ")
+        StringBuilder sql = new StringBuilder("CREATE TABLE ")
                 .append(tableName).append(" (\n");
 
         List<String> columns = new ArrayList<>();
@@ -315,22 +285,20 @@ public class MigrationGenerator {
                 ? toSnakeCase(manyToMany.targetEntity().getSimpleName()) + "_id"
                 : manyToMany.inverseJoinColumn();
 
-        String columnType = dbType == DatabaseConfig.DatabaseType.SQLITE ? "INTEGER" : "BIGINT";
-
         return String.format(
-                "CREATE TABLE IF NOT EXISTS %s (\n" +
-                        "    %s %s,\n" +
-                        "    %s %s,\n" +
+                "CREATE TABLE %s (\n" +
+                        "    %s BIGINT,\n" +
+                        "    %s BIGINT,\n" +
                         "    PRIMARY KEY (%s, %s)\n" +
                         ")",
-                joinTable, col1, columnType, col2, columnType, col1, col2
+                joinTable, col1, col2, col1, col2
         );
     }
 
     private String generateAddColumnSQL(String tableName, ColumnInfo column) {
         StringBuilder sql = new StringBuilder();
         sql.append("ALTER TABLE ").append(tableName);
-        sql.append(" ADD COLUMN ").append(column.name);
+        sql.append(" ADD ").append(column.name);
         sql.append(" ").append(column.dataType);
 
         if (!column.nullable) {
@@ -344,70 +312,35 @@ public class MigrationGenerator {
         return sql.toString();
     }
 
-    private String generateDropColumnSQL(String tableName, String columnName) {
-        switch (dbType) {
-            case SQLITE:
-                return "// SQLite doesn't support DROP COLUMN easily - manual migration needed";
-            case MYSQL, POSTGRESQL:
-                return "ALTER TABLE " + tableName + " DROP COLUMN " + columnName;
-            default:
-                return "// Unsupported database type";
-        }
-    }
-
-    private String generateModifyColumnSQL(String tableName, ColumnInfo column) {
-        StringBuilder sql = new StringBuilder();
-        sql.append("ALTER TABLE ").append(tableName);
-
-        switch (dbType) {
-            case MYSQL:
-                sql.append(" MODIFY COLUMN ");
-                break;
-            case POSTGRESQL:
-                // PostgreSQL requer sintaxe diferente
-                return generatePostgresAlterColumn(tableName, column);
-            case SQLITE:
-                return "// SQLite doesn't support ALTER COLUMN";
-            default:
-                return "// Unsupported database type";
-        }
-
-        sql.append(column.name).append(" ").append(column.dataType);
-
-        if (!column.nullable && dbType != DatabaseConfig.DatabaseType.POSTGRESQL) {
-            sql.append(" NOT NULL");
-        }
-
-        if (column.unique && dbType != DatabaseConfig.DatabaseType.POSTGRESQL) {
-            sql.append(" UNIQUE");
-        }
-
-        return sql.toString();
-    }
-
-    private String generatePostgresAlterColumn(String tableName, ColumnInfo column) {
-        // PostgreSQL precisa de comandos separados para tipo e NOT NULL
+    private String generateAlterColumnSQL(String tableName, ColumnInfo column) {
         StringBuilder sql = new StringBuilder();
         sql.append("ALTER TABLE ").append(tableName);
         sql.append(" ALTER COLUMN ").append(column.name);
-        sql.append(" TYPE ").append(column.dataType);
+        sql.append(" ").append(column.dataType);
 
         if (!column.nullable) {
-            sql.append("; ALTER TABLE ").append(tableName);
-            sql.append(" ALTER COLUMN ").append(column.name);
-            sql.append(" SET NOT NULL");
-        } else {
-            sql.append("; ALTER TABLE ").append(tableName);
-            sql.append(" ALTER COLUMN ").append(column.name);
-            sql.append(" DROP NOT NULL");
+            sql.append(" NOT NULL");
         }
 
         return sql.toString();
     }
 
+    private String generateDropColumnSQL(String tableName, String columnName) {
+        return String.format(
+                "DECLARE @ConstraintName nvarchar(200); " +
+                        "SELECT @ConstraintName = Name FROM SYS.DEFAULT_CONSTRAINTS " +
+                        "WHERE PARENT_OBJECT_ID = OBJECT_ID('%s') " +
+                        "AND PARENT_COLUMN_ID = (SELECT column_id FROM sys.columns " +
+                        "WHERE NAME = '%s' AND object_id = OBJECT_ID('%s')); " +
+                        "IF @ConstraintName IS NOT NULL " +
+                        "EXEC('ALTER TABLE %s DROP CONSTRAINT ' + @ConstraintName); " +
+                        "ALTER TABLE %s DROP COLUMN %s",
+                tableName, columnName, tableName, tableName, tableName, columnName
+        );
+    }
+
     private String generateMigrationFile(String className, String version,
-                                         List<String> upStatements,
-                                         List<String> downStatements) {
+                                         List<String> upStatements, List<String> downStatements) {
         StringBuilder sb = new StringBuilder();
 
         sb.append("package ").append(PACKAGE_NAME).append(";\n\n");
@@ -415,7 +348,7 @@ public class MigrationGenerator {
         sb.append("import com.vcinsidedigital.orm_utils.migration.MigrationContext;\n\n");
 
         sb.append("/**\n");
-        sb.append(" * Auto-generated migration\n");
+        sb.append(" * Auto-generated SQL Server migration\n");
         sb.append(" * Generated at: ").append(LocalDateTime.now()).append("\n");
         sb.append(" */\n");
         sb.append("public class ").append(className).append(" extends Migration {\n\n");
@@ -468,38 +401,14 @@ public class MigrationGenerator {
                 .replace("\n", "\\n\" +\n                \"");
     }
 
-    // Métodos auxiliares
-
     private boolean tableExists(Connection conn, String tableName) throws SQLException {
-        switch (dbType) {
-            case MYSQL:
-                String mysqlSql = "SELECT COUNT(*) FROM information_schema.tables " +
-                        "WHERE table_schema = DATABASE() AND table_name = ?";
-                try (PreparedStatement pstmt = conn.prepareStatement(mysqlSql)) {
-                    pstmt.setString(1, tableName);
-                    try (ResultSet rs = pstmt.executeQuery()) {
-                        return rs.next() && rs.getInt(1) > 0;
-                    }
-                }
-
-            case POSTGRESQL:
-                String pgSql = "SELECT COUNT(*) FROM information_schema.tables " +
-                        "WHERE table_schema = 'public' AND table_name = ?";
-                try (PreparedStatement pstmt = conn.prepareStatement(pgSql)) {
-                    pstmt.setString(1, tableName);
-                    try (ResultSet rs = pstmt.executeQuery()) {
-                        return rs.next() && rs.getInt(1) > 0;
-                    }
-                }
-            case SQLITE:
-            default:
-                String sqliteSql = "SELECT name FROM sqlite_master WHERE type='table' AND name=?";
-                try (PreparedStatement pstmt = conn.prepareStatement(sqliteSql)) {
-                    pstmt.setString(1, tableName);
-                    try (ResultSet rs = pstmt.executeQuery()) {
-                        return rs.next();
-                    }
-                }
+        String sql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES " +
+                "WHERE TABLE_NAME = ? AND TABLE_SCHEMA = 'dbo'";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, tableName);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
+            }
         }
     }
 
@@ -507,112 +416,43 @@ public class MigrationGenerator {
             throws SQLException {
         Map<String, ColumnInfo> columns = new HashMap<>();
 
-        switch (dbType) {
-            case MYSQL:
-                String mysqlSql = "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY " +
-                        "FROM information_schema.columns " +
-                        "WHERE table_schema = DATABASE() AND table_name = ?";
+        String sql = "SELECT c.COLUMN_NAME, c.DATA_TYPE, c.CHARACTER_MAXIMUM_LENGTH, " +
+                "c.IS_NULLABLE, " +
+                "CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS IS_PRIMARY_KEY " +
+                "FROM INFORMATION_SCHEMA.COLUMNS c " +
+                "LEFT JOIN ( " +
+                "  SELECT ku.COLUMN_NAME " +
+                "  FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc " +
+                "  JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE ku " +
+                "    ON tc.CONSTRAINT_NAME = ku.CONSTRAINT_NAME " +
+                "  WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' AND tc.TABLE_NAME = ? " +
+                ") pk ON c.COLUMN_NAME = pk.COLUMN_NAME " +
+                "WHERE c.TABLE_NAME = ?";
 
-                try (PreparedStatement pstmt = conn.prepareStatement(mysqlSql)) {
-                    pstmt.setString(1, tableName);
-                    try (ResultSet rs = pstmt.executeQuery()) {
-                        while (rs.next()) {
-                            String columnName = rs.getString("COLUMN_NAME");
-                            String columnType = rs.getString("COLUMN_TYPE");
-                            boolean nullable = "YES".equals(rs.getString("IS_NULLABLE"));
-                            String columnKey = rs.getString("COLUMN_KEY");
-                            boolean isPrimaryKey = "PRI".equals(columnKey);
-                            boolean unique = "UNI".equals(columnKey);
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, tableName);
+            pstmt.setString(2, tableName);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    String columnName = rs.getString("COLUMN_NAME");
+                    String dataType = rs.getString("DATA_TYPE").toUpperCase();
+                    Integer maxLength = (Integer) rs.getObject("CHARACTER_MAXIMUM_LENGTH");
+                    boolean nullable = "YES".equals(rs.getString("IS_NULLABLE"));
+                    boolean isPrimaryKey = rs.getInt("IS_PRIMARY_KEY") == 1;
 
-                            columns.put(columnName, new ColumnInfo(
-                                    columnName, columnType, nullable, isPrimaryKey, unique
-                            ));
-                        }
+                    String fullType = dataType;
+                    if (maxLength != null && (dataType.contains("VARCHAR") || dataType.contains("CHAR"))) {
+                        fullType = dataType + "(" + (maxLength == -1 ? "MAX" : maxLength) + ")";
                     }
+
+                    columns.put(columnName, new ColumnInfo(
+                            columnName, fullType, nullable, isPrimaryKey, false
+                    ));
                 }
-                break;
-
-            case POSTGRESQL:
-                String pgSql = "SELECT column_name, data_type, is_nullable, " +
-                        "character_maximum_length FROM information_schema.columns " +
-                        "WHERE table_schema = 'public' AND table_name = ?";
-
-                try (PreparedStatement pstmt = conn.prepareStatement(pgSql)) {
-                    pstmt.setString(1, tableName);
-                    try (ResultSet rs = pstmt.executeQuery()) {
-                        while (rs.next()) {
-                            String columnName = rs.getString("column_name");
-                            String dataType = rs.getString("data_type");
-                            Integer maxLength = (Integer) rs.getObject("character_maximum_length");
-
-                            String fullType = dataType.toUpperCase();
-                            if (maxLength != null && fullType.contains("VARCHAR")) {
-                                fullType = fullType + "(" + maxLength + ")";
-                            }
-
-                            boolean nullable = "YES".equals(rs.getString("is_nullable"));
-                            boolean isPrimaryKey = isPrimaryKeyPostgres(conn, tableName, columnName);
-
-                            columns.put(columnName, new ColumnInfo(
-                                    columnName, fullType, nullable, isPrimaryKey, false
-                            ));
-                        }
-                    }
-                }
-                break;
-            case SQLITE:
-            default:
-                String sqliteSql = "PRAGMA table_info(" + tableName + ")";
-                try (Statement stmt = conn.createStatement();
-                     ResultSet rs = stmt.executeQuery(sqliteSql)) {
-
-                    while (rs.next()) {
-                        String columnName = rs.getString("name");
-                        String dataType = rs.getString("type");
-                        boolean nullable = rs.getInt("notnull") == 0;
-                        boolean isPrimaryKey = rs.getInt("pk") > 0;
-
-                        columns.put(columnName, new ColumnInfo(
-                                columnName, dataType, nullable, isPrimaryKey, false
-                        ));
-                    }
-                }
-                break;
+            }
         }
 
         return columns;
-    }
-
-    private boolean isPrimaryKeyPostgres(Connection conn, String tableName, String columnName)
-            throws SQLException {
-        String sql = "SELECT COUNT(*) FROM information_schema.table_constraints tc " +
-                "JOIN information_schema.key_column_usage kcu " +
-                "ON tc.constraint_name = kcu.constraint_name " +
-                "WHERE tc.constraint_type = 'PRIMARY KEY' " +
-                "AND tc.table_name = ? AND kcu.column_name = ?";
-
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, tableName);
-            pstmt.setString(2, columnName);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                return rs.next() && rs.getInt(1) > 0;
-            }
-        }
-    }
-
-    private boolean isPrimaryKeySqlServer(Connection conn, String tableName, String columnName)
-            throws SQLException {
-        String sql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE " +
-                "WHERE OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + CONSTRAINT_NAME), " +
-                "'IsPrimaryKey') = 1 AND TABLE_NAME = ? AND COLUMN_NAME = ?";
-
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, tableName);
-            pstmt.setString(2, columnName);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                return rs.next() && rs.getInt(1) > 0;
-            }
-        }
     }
 
     private Map<String, ColumnInfo> getExpectedColumns(Class<?> entityClass) {
@@ -635,7 +475,7 @@ public class MigrationGenerator {
                 if (joinCol == null) continue;
 
                 columnName = joinCol.name();
-                dataType = getColumnTypeForForeignKey();
+                dataType = "BIGINT";
                 nullable = joinCol.nullable();
             } else {
                 Column column = field.getAnnotation(Column.class);
@@ -666,39 +506,22 @@ public class MigrationGenerator {
     }
 
     private boolean needsModification(ColumnInfo existing, ColumnInfo expected) {
-        String existingBaseType = existing.dataType.replaceAll("\\(.*\\)", "").trim().toUpperCase();
-        String expectedBaseType = expected.dataType.replaceAll("\\(.*\\)", "").trim().toUpperCase();
+        String existingBaseType = existing.dataType.replaceAll("\\(.*\\)", "").trim();
+        String expectedBaseType = expected.dataType.replaceAll("\\(.*\\)", "").trim();
 
-        if (!existingBaseType.equals(expectedBaseType)) {
-            return true;
-        }
-
-        if (existing.dataType.toUpperCase().startsWith("VARCHAR") ||
-                existing.dataType.toUpperCase().startsWith("CHAR")) {
-            if (!existing.dataType.equalsIgnoreCase(expected.dataType)) {
-                return true;
-            }
-        }
-
-        if (existing.nullable != expected.nullable) {
-            return true;
-        }
-
-        if (existing.unique != expected.unique) {
-            return true;
-        }
-
-        return false;
+        if (!existingBaseType.equals(expectedBaseType)) return true;
+        if (!existing.dataType.equalsIgnoreCase(expected.dataType)) return true;
+        if (existing.nullable != expected.nullable) return true;
+        return existing.unique != expected.unique;
     }
 
     private String generateColumnDefinition(Field field) {
         if (field.isAnnotationPresent(ManyToOne.class)) {
             JoinColumn joinCol = field.getAnnotation(JoinColumn.class);
             if (joinCol == null) return null;
-
             String colName = joinCol.name();
             String nullable = joinCol.nullable() ? "" : " NOT NULL";
-            return colName + " " + getColumnTypeForForeignKey() + nullable;
+            return colName + " BIGINT" + nullable;
         }
 
         Column column = field.getAnnotation(Column.class);
@@ -714,27 +537,14 @@ public class MigrationGenerator {
                 field.getAnnotation(Id.class).autoIncrement();
 
         String type = getColumnType(field.getType(),
-                column != null ? column.length() : 255, isAutoIncrementPK);
+                column != null ? column.length() : 255,
+                isAutoIncrementPK);
         StringBuilder def = new StringBuilder(columnName).append(" ").append(type);
 
         if (field.isAnnotationPresent(Id.class)) {
-            Id id = field.getAnnotation(Id.class);
             def.append(" PRIMARY KEY");
-
-            if (id.autoIncrement() && isNumericType(field.getType())) {
-                switch (dbType) {
-                    case MYSQL:
-                        def.append(" AUTO_INCREMENT");
-                        break;
-                    case POSTGRESQL:
-                        // Reconstruir usando SERIAL/BIGSERIAL
-                        return columnName + " " +
-                                (field.getType() == Long.class || field.getType() == long.class ?
-                                        "BIGSERIAL" : "SERIAL") + " PRIMARY KEY";
-                    case SQLITE:
-                        def.append(" AUTOINCREMENT");
-                        break;
-                }
+            if (isAutoIncrementPK && isNumericType(field.getType())) {
+                def.append(" IDENTITY(1,1)");
             }
         }
 
@@ -761,83 +571,35 @@ public class MigrationGenerator {
         }
 
         String targetTable = getTableName(targetEntity);
-        String fkName = "fk_" + tableName + "_" + joinCol.name();
+        String fkName = "FK_" + tableName + "_" + joinCol.name();
 
         return String.format("CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s(%s)",
                 fkName, joinCol.name(), targetTable, joinCol.referencedColumnName());
     }
 
     private String getColumnType(Class<?> javaType, int length, boolean isAutoIncrementPK) {
-        if (javaType == java.time.LocalDateTime.class) {
-            return switch (dbType) {
-                case MYSQL -> "DATETIME";
-                case POSTGRESQL -> "TIMESTAMP";
-                case SQLITE -> "TEXT";
-                default -> "TEXT";
-            };
-        } else if (javaType == java.time.LocalDate.class) {
-            return switch (dbType) {
-                case MYSQL, POSTGRESQL -> "DATE";
-                case SQLITE -> "TEXT";
-                default -> "TEXT";
-            };
-        } else if (javaType == java.time.LocalTime.class) {
-            return switch (dbType) {
-                case MYSQL, POSTGRESQL -> "TIME";
-                case SQLITE -> "TEXT";
-                default -> "TEXT";
-            };
+        if (javaType == java.time.LocalDateTime.class || javaType == Timestamp.class) {
+            return "DATETIME2";
+        } else if (javaType == java.time.LocalDate.class || javaType == java.sql.Date.class) {
+            return "DATE";
+        } else if (javaType == java.time.LocalTime.class || javaType == Time.class) {
+            return "TIME";
         } else if (javaType == Long.class || javaType == long.class) {
-            if (dbType == DatabaseConfig.DatabaseType.SQLITE && isAutoIncrementPK) {
-                return "INTEGER";
-            }
-            return switch (dbType) {
-                case SQLITE -> "INTEGER";
-                case MYSQL, POSTGRESQL -> "BIGINT";
-                default -> "INTEGER";
-            };
+            return "BIGINT";
         } else if (javaType == Integer.class || javaType == int.class) {
-            return switch (dbType) {
-                case SQLITE -> "INTEGER";
-                case MYSQL, POSTGRESQL -> "INT";
-                default -> "INTEGER";
-            };
+            return "INT";
         } else if (javaType == String.class) {
-            return switch (dbType) {
-                case MYSQL, POSTGRESQL -> "VARCHAR(" + length + ")";
-                case SQLITE -> "TEXT";
-                default -> "TEXT";
-            };
+            return length > 4000 ? "NVARCHAR(MAX)" : "NVARCHAR(" + length + ")";
         } else if (javaType == Boolean.class || javaType == boolean.class) {
-            return switch (dbType) {
-                case MYSQL -> "TINYINT(1)";
-                case POSTGRESQL -> "BOOLEAN";
-                case SQLITE -> "INTEGER";
-                default -> "INTEGER";
-            };
+            return "BIT";
         } else if (javaType == Double.class || javaType == double.class) {
-            return switch (dbType) {
-                case MYSQL -> "DOUBLE";
-                case POSTGRESQL -> "DOUBLE PRECISION";
-                case SQLITE -> "REAL";
-                default -> "REAL";
-            };
+            return "FLOAT";
         } else if (javaType == Float.class || javaType == float.class) {
-            return switch (dbType) {
-                case MYSQL, POSTGRESQL -> "FLOAT";
-                case SQLITE -> "REAL";
-                default -> "REAL";
-            };
+            return "REAL";
+        } else if (javaType == java.util.Date.class) {
+            return "DATETIME2";
         }
-        return "TEXT";
-    }
-
-    private String getColumnTypeForForeignKey() {
-        return switch (dbType) {
-            case SQLITE -> "INTEGER";
-            case MYSQL, POSTGRESQL -> "BIGINT";
-            default -> "INTEGER";
-        };
+        return "NVARCHAR(255)";
     }
 
     private String getTableName(Class<?> entityClass) {

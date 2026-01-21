@@ -15,15 +15,27 @@ public class Main {
     public static void main(String[] args) {
         try {
             // Configure database (SQLite example)
-            DatabaseConfig config = DatabaseConfig.builder()
+            /*DatabaseConfig config = DatabaseConfig.builder()
                     .sqlite("myapp.db")
-                    .build();
+                    .build();*/
 
-            // Or MySQL:
+            // Configure database MySQL
             /*DatabaseConfig config = DatabaseConfig.builder()
                  .mysql("localhost", 3306, "teste")
                  .credentials("root", "123456")
                  .build();*/
+
+            // Configure database postgres
+            /*DatabaseConfig config = DatabaseConfig.builder()
+                    .postgresql("localhost", 5432, "teste")
+                    .credentials("postgres", "123456")
+                    .build();*/
+
+            // Configure database sqlserver
+            DatabaseConfig config = DatabaseConfig.builder()
+                    .sqlserver("localhost", 1433, "teste").
+                    credentials("sa", "123456").build();
+
 
             // Initialize ORM
             ORM orm = new ORM(config)

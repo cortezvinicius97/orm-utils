@@ -3,6 +3,8 @@ package com.vcinsidedigital.orm_utils.core;
 import com.vcinsidedigital.orm_utils.annotations.*;
 import com.vcinsidedigital.orm_utils.config.ConnectionPool;
 import com.vcinsidedigital.orm_utils.config.DatabaseConfig;
+import com.vcinsidedigital.orm_utils.query.QueryBuilder;
+import com.vcinsidedigital.orm_utils.query.QueryResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -106,23 +108,34 @@ public class EntityManager {
         DatabaseConfig.DatabaseType dbType = ConnectionPool.getInstance()
                 .getConfig().getType();
 
-        if (dbType == DatabaseConfig.DatabaseType.SQLITE) {
-            // SQLite: usar last_insert_rowid()
-            try (Statement s = conn.createStatement();
-                 ResultSet rs = s.executeQuery("SELECT last_insert_rowid()")) {
-                if (rs.next()) {
-                    return rs.getLong(1);
+        switch (dbType) {
+            case SQLITE:
+                // SQLite: usar last_insert_rowid()
+                try (Statement s = conn.createStatement();
+                     ResultSet rs = s.executeQuery("SELECT last_insert_rowid()")) {
+                    if (rs.next()) {
+                        return rs.getLong(1);
+                    }
                 }
-            }
-            return null;
-        } else {
-            // MySQL: usar getGeneratedKeys()
-            try (ResultSet rs = stmt.getGeneratedKeys()) {
-                if (rs.next()) {
-                    return rs.getLong(1);
+                return null;
+
+            case POSTGRESQL:
+                // PostgreSQL: getGeneratedKeys() funciona bem
+                try (ResultSet rs = stmt.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        return rs.getLong(1);
+                    }
                 }
-            }
-            return null;
+                return null;
+            case MYSQL:
+            default:
+                // MySQL: usar getGeneratedKeys()
+                try (ResultSet rs = stmt.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        return rs.getLong(1);
+                    }
+                }
+                return null;
         }
     }
 
@@ -628,4 +641,114 @@ public class EntityManager {
 
         return value;
     }
+
+    // ========== QUERY BUILDER ==========
+
+    /**
+     * Cria um QueryBuilder para construir queries complexas
+     *
+     * @param entityClass Classe da entidade
+     * @return QueryBuilder instance
+     */
+    public <T> QueryBuilder<T> queryBuilder(Class<T> entityClass) {
+        return new QueryBuilder<>(entityClass);
+    }
+
+    // ========== RAW SQL QUERIES ==========
+
+    /**
+     * Executa uma query SQL customizada e retorna o resultado bruto
+     * Suporta bind parameters para prevenir SQL injection
+     *
+     * @param sql Query SQL com placeholders ? para parâmetros
+     * @param params Parâmetros para bind
+     * @return QueryResult com os dados retornados
+     */
+    public QueryResult query(String sql, Object... params) throws Exception {
+        logger.debug("Executing raw query: {}", sql);
+        logger.debug("Parameters: {}", Arrays.toString(params));
+
+        try (Connection conn = ConnectionPool.getInstance().getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            // Bind parameters
+            for (int i = 0; i < params.length; i++) {
+                pstmt.setObject(i + 1, params[i]);
+            }
+
+            // Execute query
+            try (ResultSet rs = pstmt.executeQuery()) {
+                return new QueryResult(rs);
+            }
+        }
+    }
+
+    /**
+     * Executa um comando SQL (INSERT, UPDATE, DELETE) customizado
+     *
+     * @param sql Comando SQL com placeholders ?
+     * @param params Parâmetros para bind
+     * @return Número de linhas afetadas
+     */
+    public int execute(String sql, Object... params) throws Exception {
+        logger.debug("Executing command: {}", sql);
+        logger.debug("Parameters: {}", Arrays.toString(params));
+
+        try (Connection conn = ConnectionPool.getInstance().getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            // Bind parameters
+            for (int i = 0; i < params.length; i++) {
+                pstmt.setObject(i + 1, params[i]);
+            }
+
+            return pstmt.executeUpdate();
+        }
+    }
+
+    /**
+     * Executa uma query e mapeia o resultado para uma lista de entidades
+     *
+     * @param entityClass Classe da entidade
+     * @param sql Query SQL
+     * @param params Parâmetros
+     * @return Lista de entidades
+     */
+    public <T> List<T> queryForList(Class<T> entityClass, String sql, Object... params) throws Exception {
+        logger.debug("Executing query for list: {}", sql);
+
+        List<T> results = new ArrayList<>();
+
+        try (Connection conn = ConnectionPool.getInstance().getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            for (int i = 0; i < params.length; i++) {
+                pstmt.setObject(i + 1, params[i]);
+            }
+
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    results.add(mapResultSetToEntity(rs, entityClass));
+                }
+            }
+        }
+
+        return results;
+    }
+
+    /**
+     * Executa uma query e retorna uma única entidade
+     *
+     * @param entityClass Classe da entidade
+     * @param sql Query SQL
+     * @param params Parâmetros
+     * @return Entidade ou null
+     */
+    public <T> T queryForObject(Class<T> entityClass, String sql, Object... params) throws Exception {
+        List<T> results = queryForList(entityClass, sql, params);
+        return results.isEmpty() ? null : results.get(0);
+    }
+
+
+
 }
